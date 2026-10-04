@@ -40,3 +40,23 @@ def test_deadline_without_clear_type_goes_to_review():
     r = classify("A student deadline is coming soon. Save this so you do not miss it.")
     assert r["local_is_opportunity"] == 0
     assert r["local_kind"] == "needs_review"
+
+
+def test_owner_name_does_not_create_false_scholarship():
+    r = classify_saved_post(
+        "College App + Scholarship Advice | Melody",
+        "How to make your ordinary life stand out in college essays.\n\nInstagram owner: College App + Scholarship Advice | Melody",
+    )
+    assert r["local_is_opportunity"] == 0
+    assert r["local_kind"] == "college_advice"
+
+
+def test_hashtag_keyword_dump_does_not_create_false_award():
+    r = classify_saved_post(
+        "Girls In CS",
+        "how to start coding in high school tutorial! save for later!\n"
+        "#girlsincs #coding #studentopportunities computerscience college award awardwinning awards\n"
+        "Instagram owner: Girls In CS",
+    )
+    assert r["local_is_opportunity"] == 0
+    assert r["local_kind"] == "resource"
