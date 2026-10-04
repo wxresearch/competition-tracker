@@ -15,12 +15,34 @@ ALIASES = {
 }
 
 
+def _fix_mojibake(value: Any) -> str:
+    """Repair common UTF-8-as-Latin-1 mojibake found in Meta JSON exports."""
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+
+    suspicious = ("Ã", "Â", "â", "ð", "ï")
+    if not any(marker in text for marker in suspicious):
+        return text
+
+    try:
+        repaired = text.encode("latin1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return text
+
+    before = sum(text.count(marker) for marker in suspicious)
+    after = sum(repaired.count(marker) for marker in suspicious)
+    return repaired if after < before else text
+
+
 def _pick(record: dict[str, Any], aliases: list[str]) -> str:
     lowered = {str(k).strip().lower(): v for k, v in record.items()}
     for key in aliases:
         value = lowered.get(key)
         if value is not None and str(value).strip():
-            return str(value).strip()
+            return _fix_mojibake(value)
     return ""
 
 
@@ -57,16 +79,100 @@ def normalize_record(record: dict[str, Any]) -> dict[str, str]:
     return out
 
 
-def _instagram_href_from_map(record: dict[str, Any]) -> str:
-    """
-    Extract the actual saved-post URL from Instagram export string_map_data.
+def _owner_from_label_values(label_values: list[Any]) -> tuple[str, str, str]:
+    owner_name = ""
+    owner_username = ""
+    owner_url = ""
 
-    Meta has changed the label used for the saved-media URL across export
-    versions/locales, so we do NOT require a particular key such as "Saved on".
-    Instead, inspect every metadata entry and accept only URLs that are clearly
-    Instagram posts/reels. Profile, hashtag, owner and brand-partner URLs are
-    rejected by _is_instagram_post_url().
+    for item in label_values:
+        if not isinstance(item, dict) or str(item.get("title") or "").strip().lower() != "owner":
+            continue
+
+        for outer in item.get("dict") or []:
+            if not isinstance(outer, dict):
+                continue
+            for field in outer.get("dict") or []:
+                if not isinstance(field, dict):
+                    continue
+                label = str(field.get("label") or "").strip().lower()
+                value = _fix_mojibake(field.get("value"))
+                if label == "name" and value and not owner_name:
+                    owner_name = value
+                elif label == "username" and value and not owner_username:
+                    owner_username = value
+                elif label == "url" and value and not owner_url:
+                    owner_url = value
+
+    return owner_name, owner_username, owner_url
+
+
+def _label_values_export_record(record: dict[str, Any]) -> dict[str, str] | None:
     """
+    Parse the saved_posts.json format used by newer Meta exports:
+
+    {
+      "timestamp": ...,
+      "label_values": [
+        {"label": "URL", "value": "...", "href": "..."},
+        {"label": "Caption", "value": "..."},
+        {"label": "Title", "value": "..."},
+        {"title": "Owner", "dict": [...]}
+      ]
+    }
+    """
+    label_values = record.get("label_values")
+    if not isinstance(label_values, list):
+        return None
+
+    url = ""
+    captions: list[str] = []
+    titles: list[str] = []
+
+    for item in label_values:
+        if not isinstance(item, dict):
+            continue
+
+        label = str(item.get("label") or "").strip().lower()
+        if label == "url":
+            candidate = str(item.get("href") or item.get("value") or "").strip()
+            if _is_instagram_post_url(candidate):
+                url = candidate
+        elif label == "caption":
+            caption = _fix_mojibake(item.get("value"))
+            if caption and caption not in captions:
+                captions.append(caption)
+        elif label == "title":
+            title = _fix_mojibake(item.get("value"))
+            if title and title not in titles:
+                titles.append(title)
+
+    if not url:
+        return None
+
+    owner_name, owner_username, owner_url = _owner_from_label_values(label_values)
+
+    title = titles[0] if titles else (owner_name or owner_username or "Instagram saved post")
+    raw_parts: list[str] = []
+    if captions:
+        raw_parts.append("\n\n".join(captions))
+
+    owner_label = owner_name
+    if owner_username:
+        owner_label = f"{owner_label} (@{owner_username})" if owner_label else f"@{owner_username}"
+    if owner_label:
+        raw_parts.append(f"Instagram owner: {owner_label}")
+    if owner_url:
+        raw_parts.append(f"Owner website: {owner_url}")
+
+    return {
+        "import_title": title,
+        "raw_text": "\n\n".join(raw_parts),
+        "instagram_url": url,
+        "imported_official_url": "",
+    }
+
+
+def _instagram_href_from_map(record: dict[str, Any]) -> str:
     smd = record.get("string_map_data")
     if not isinstance(smd, dict):
         return ""
@@ -80,7 +186,6 @@ def _instagram_href_from_map(record: dict[str, Any]) -> str:
 
 
 def _instagram_href_from_list(record: dict[str, Any]) -> str:
-    """Fallback for export variants using string_list_data."""
     sld = record.get("string_list_data")
     if not isinstance(sld, list):
         return ""
@@ -98,7 +203,7 @@ def _instagram_value_from_list(record: dict[str, Any]) -> str:
         return ""
     for item in sld:
         if isinstance(item, dict):
-            value = str(item.get("value") or "").strip()
+            value = _fix_mojibake(item.get("value"))
             if value:
                 return value
     return ""
@@ -109,7 +214,7 @@ def _instagram_export_record(record: dict[str, Any]) -> dict[str, str] | None:
     if not href:
         return None
 
-    title = str(record.get("title") or "").strip()
+    title = _fix_mojibake(record.get("title"))
     value = _instagram_value_from_list(record)
 
     raw_bits = []
@@ -119,7 +224,7 @@ def _instagram_export_record(record: dict[str, Any]) -> dict[str, str] | None:
         raw_bits.append(f"Instagram export value/account: {value}")
 
     return {
-        "import_title": title or value,
+        "import_title": title or value or "Instagram saved post",
         "raw_text": "\n".join(raw_bits),
         "instagram_url": href,
         "imported_official_url": "",
@@ -145,13 +250,19 @@ def _find_records(value: Any) -> list[dict[str, str]]:
     if not isinstance(value, dict):
         return records
 
+    # Newer Meta saved_posts.json format.
+    label_values_row = _label_values_export_record(value)
+    if label_values_row:
+        records.append(label_values_row)
+        return records
+
+    # Older Meta export variants.
     instagram_row = _instagram_export_record(value)
     if instagram_row:
         records.append(instagram_row)
         return records
 
-    # Generic JSON records are supported too, but only when they normalize into
-    # meaningful fields. Nested Instagram metadata is deliberately ignored.
+    # Generic JSON records.
     keys = {str(k).lower() for k in value}
     hints = {alias for group in ALIASES.values() for alias in group}
     if keys & hints:
