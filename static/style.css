@@ -85,3 +85,13 @@ code { background: #f0f0ec; padding: 2px 5px; border-radius: 5px; }
 .kind-needs_review { background: #fff5dd; color: #7a5a13; }
 .kind-resource, .kind-college_advice, .kind-other { background: #efefeb; color: #666; }
 .non-opportunity { opacity: .94; }
+
+.actual { background: #e4f5e9; color: #155b2b; }
+.source { background: #e8efff; color: #264f94; }
+.unresolved { background: #fff3d6; color: #77570f; }
+.muted { background: #efefeb; color: #696961; }
+.source-card { border-style: dashed; }
+.source-note { margin: 14px 0; padding: 12px 14px; border-radius: 12px; background: #f3f5f8; color: #525861; }
+.source-timing { margin: 14px 0 0; padding: 10px 12px; border-radius: 10px; background: #fff7df; font-weight: 800; }
+.source-timing span { display: block; margin-top: 3px; color: #7b7051; font-size: 11px; font-weight: 500; }
+.kind-program, .kind-fellowship { background: #e7f5f2; color: #176357; }
