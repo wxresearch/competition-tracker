@@ -44,6 +44,7 @@ def home(
     category: str = "",
     verified: str = "",
     status: str = "",
+    view: str = "opportunities",
     message: str = "",
     error: str = "",
 ):
@@ -51,13 +52,14 @@ def home(
         request=request,
         name="index.html",
         context={
-            "competitions": db.list_competitions(q=q, category=category, verified=verified, status=status),
+            "competitions": db.list_competitions(q=q, category=category, verified=verified, status=status, view=view),
             "categories": db.categories(),
             "stats": db.stats(),
             "q": q,
             "category": category,
             "verified": verified,
             "status": status,
+            "view": view,
             "message": message,
             "error": error,
             "has_api_key": bool(os.getenv("OPENAI_API_KEY")),
@@ -71,7 +73,7 @@ async def import_file(file: UploadFile = File(...)):
         data = await file.read()
         rows = parse_upload(file.filename or "", data)
         count = db.insert_imported(rows)
-        return go(message=f"Imported {count} new competition records.")
+        return go(message=f"Imported {count} new saved-post records. Local filtering is applied automatically.")
     except Exception as exc:
         return go(error=str(exc))
 
@@ -117,7 +119,7 @@ def verify(comp_id: int):
 @app.post("/extract-next")
 def extract_next(batch_size: int = Form(default=10)):
     batch_size = max(1, min(batch_size, 25))
-    records = [r for r in db.list_competitions(status="unreviewed")][:batch_size]
+    records = [r for r in db.list_competitions(status="unreviewed", view="opportunities")][:batch_size]
     done = 0
     errors = 0
     for record in records:
@@ -133,6 +135,12 @@ def extract_next(batch_size: int = Form(default=10)):
         except Exception:
             errors += 1
     return go(message=f"Processed {done} records; {errors} failed.")
+
+
+@app.post("/reclassify")
+def reclassify():
+    count = db.reclassify_all(force=True)
+    return go(message=f"Reclassified {count} saved posts locally. No API credits were used.")
 
 
 @app.post("/competitions/{comp_id}/delete")
