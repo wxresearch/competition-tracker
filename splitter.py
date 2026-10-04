@@ -145,26 +145,56 @@ def _valid_name(name: str) -> bool:
     return bool(re.search(r"\b(?:[A-Z]{2,}|[A-Z][a-z]{2,})\b", name))
 
 
-def _date_parts(text: str) -> tuple[int, int, str] | None:
+def _date_candidates(text: str) -> list[tuple[int, int, str, int, int]]:
     value = text or ""
+    found: list[tuple[int, int, str, int, int]] = []
 
-    month_first = DATE_ANY_RE.search(value)
-    if month_first:
-        return (
-            MONTHS[month_first.group(1).lower()],
-            int(month_first.group(2)),
-            month_first.group(0),
+    for match in DATE_ANY_RE.finditer(value):
+        found.append(
+            (
+                MONTHS[match.group(1).lower()],
+                int(match.group(2)),
+                match.group(0),
+                match.start(),
+                match.end(),
+            )
         )
 
-    day_first = DATE_DAY_MONTH_RE.search(value)
-    if day_first:
-        return (
-            MONTHS[day_first.group(2).lower()],
-            int(day_first.group(1)),
-            day_first.group(0),
+    for match in DATE_DAY_MONTH_RE.finditer(value):
+        found.append(
+            (
+                MONTHS[match.group(2).lower()],
+                int(match.group(1)),
+                match.group(0),
+                match.start(),
+                match.end(),
+            )
         )
 
-    return None
+    # Prevent duplicate spans if a future regex change ever overlaps.
+    unique: dict[tuple[int, int], tuple[int, int, str, int, int]] = {}
+    for item in found:
+        unique[(item[3], item[4])] = item
+    return sorted(unique.values(), key=lambda item: item[3])
+
+
+def _date_parts(text: str, near_name: str = "") -> tuple[int, int, str] | None:
+    candidates = _date_candidates(text)
+    if not candidates:
+        return None
+
+    if near_name:
+        name_pos = (text or "").lower().find(near_name.lower())
+        if name_pos >= 0:
+            name_mid = name_pos + len(near_name) / 2
+            chosen = min(
+                candidates,
+                key=lambda item: abs(((item[3] + item[4]) / 2) - name_mid),
+            )
+            return chosen[0], chosen[1], chosen[2]
+
+    chosen = candidates[0]
+    return chosen[0], chosen[1], chosen[2]
 
 
 def _normalized_date(month: int, day: int, source_timestamp: int | None) -> str | None:
@@ -181,8 +211,12 @@ def _normalized_date(month: int, day: int, source_timestamp: int | None) -> str 
         return None
 
 
-def _timing_from_context(context: str, source_timestamp: int | None) -> dict[str, str | None]:
-    parts = _date_parts(context)
+def _timing_from_context(
+    context: str,
+    source_timestamp: int | None,
+    near_name: str = "",
+) -> dict[str, str | None]:
+    parts = _date_parts(context, near_name=near_name)
     if not parts:
         return {"deadline": None, "deadline_text": None, "source_timing": None}
     month, day, date_text = parts
@@ -216,7 +250,7 @@ def _add_candidate(
     if not key or key in seen:
         return
     seen.add(key)
-    timing = _timing_from_context(context, source_timestamp)
+    timing = _timing_from_context(context, source_timestamp, near_name=name)
     out.append(
         {
             "name": name,
