@@ -90,8 +90,9 @@ def _search_query(record: dict[str, Any]) -> str:
     parts = [f'"{name}"']
     if organizer:
         parts.append(f'"{organizer}"')
+    year = date.today().year
     parts.append(
-        "official rules application deadline eligibility entry fee prize current cycle 2026 2027"
+        f"official rules application deadline eligibility entry fee prize current cycle {year} {year + 1}"
     )
     return " ".join(parts)
 
@@ -230,6 +231,33 @@ Content:
     return "\n\n".join(blocks), sources
 
 
+def _canonical_host(url: str) -> str:
+    try:
+        return urlparse(url).netloc.lower().removeprefix("www.")
+    except Exception:
+        return ""
+
+
+def _validated_official_url(
+    proposed: str | None,
+    sources: list[dict[str, str]],
+) -> str | None:
+    if not proposed:
+        return None
+
+    proposed_host = _canonical_host(proposed)
+    if not proposed_host:
+        return None
+
+    # The exact path may differ because a model can canonicalize a rules URL to
+    # the site's main opportunity page. Only accept it when Tavily actually
+    # retrieved the same host; then store the retrieved URL, not a generated URL.
+    for source in sources:
+        if _canonical_host(source.get("url") or "") == proposed_host:
+            return source["url"]
+    return None
+
+
 def verify_competition(
     record: dict[str, Any],
 ) -> tuple[CompetitionVerification, list[dict[str, str]]]:
@@ -277,7 +305,13 @@ LIVE WEB SOURCES:
 
     # Only expose URLs that were actually retrieved by Tavily. Put the model's
     # selected official URL first when it matches one of the fetched sources.
-    if parsed.official_url:
-        sources.sort(key=lambda s: 0 if s["url"] == parsed.official_url else 1)
+    validated_url = _validated_official_url(parsed.official_url, sources)
+    if parsed.official_url and not validated_url:
+        extra = " The model's proposed official URL was discarded because Tavily did not retrieve that domain."
+        parsed.notes = ((parsed.notes or "").rstrip() + extra).strip()
+    parsed.official_url = validated_url
+
+    if validated_url:
+        sources.sort(key=lambda s: 0 if s["url"] == validated_url else 1)
 
     return parsed, sources
