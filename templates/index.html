@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Competition Tracker</title>
+  <title>Opportunity Tracker</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -11,27 +11,27 @@
     <header class="hero">
       <div>
         <p class="eyebrow">PERSONAL OPPORTUNITY DATABASE</p>
-        <h1>Competition Tracker</h1>
-        <p class="subtitle">Turn saved competition posts into deadlines, fees, prizes, requirements, and verified sources.</p>
+        <h1>Opportunity Tracker</h1>
+        <p class="subtitle">Import your Instagram saves, filter likely opportunities locally for free, then use AI only on the ones worth researching.</p>
       </div>
       <div class="stats">
-        <div><strong>{{ stats.total }}</strong><span>Total</span></div>
+        <div><strong>{{ stats.opportunities }}</strong><span>Likely opportunities</span></div>
+        <div><strong>{{ stats.review }}</strong><span>Needs review</span></div>
+        <div><strong>{{ stats.other }}</strong><span>Other saves</span></div>
         <div><strong>{{ stats.verified }}</strong><span>Verified</span></div>
-        <div><strong>{{ stats.open }}</strong><span>Open / Upcoming</span></div>
-        <div><strong>{{ stats.unreviewed }}</strong><span>Unreviewed</span></div>
       </div>
     </header>
 
     {% if message %}<div class="notice success">{{ message }}</div>{% endif %}
     {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
     {% if not has_api_key %}
-      <div class="notice warn"><strong>AI is not configured.</strong> Importing works now, but Extract and Verify need an OPENAI_API_KEY in <code>.env</code>.</div>
+      <div class="notice warn"><strong>AI is not configured.</strong> Importing and local filtering still work for free. Extract and Verify require an OPENAI_API_KEY.</div>
     {% endif %}
 
     <section class="panel import-panel">
       <div>
-        <h2>Import your saved competitions</h2>
-        <p>Upload CSV or JSON. Best columns: <code>title</code>, <code>caption</code>, <code>instagram_url</code>, <code>official_url</code>.</p>
+        <h2>Import saved Instagram posts</h2>
+        <p>Upload your Instagram JSON or a CSV. The local classifier automatically separates opportunities from advice, resources, and unrelated saves.</p>
       </div>
       <form action="/import" method="post" enctype="multipart/form-data" class="upload-form">
         <input type="file" name="file" accept=".csv,.json" required>
@@ -39,17 +39,25 @@
       </form>
     </section>
 
+    <section class="view-tabs">
+      <a href="/?view=opportunities" class="{% if view == 'opportunities' %}active{% endif %}">Likely opportunities <span>{{ stats.opportunities }}</span></a>
+      <a href="/?view=review" class="{% if view == 'review' %}active{% endif %}">Needs review <span>{{ stats.review }}</span></a>
+      <a href="/?view=other" class="{% if view == 'other' %}active{% endif %}">Other saves <span>{{ stats.other }}</span></a>
+      <a href="/?view=all" class="{% if view == 'all' %}active{% endif %}">All saves <span>{{ stats.total }}</span></a>
+    </section>
+
     <section class="panel controls">
       <form method="get" action="/" class="filters">
-        <input type="search" name="q" value="{{ q }}" placeholder="Search name, organizer, prize...">
+        <input type="hidden" name="view" value="{{ view }}">
+        <input type="search" name="q" value="{{ q }}" placeholder="Search caption, name, organizer, prize...">
         <select name="category">
-          <option value="">All categories</option>
+          <option value="">All AI categories</option>
           {% for c in categories %}
             <option value="{{ c }}" {% if c == category %}selected{% endif %}>{{ c }}</option>
           {% endfor %}
         </select>
         <select name="status">
-          <option value="">All statuses</option>
+          <option value="">All AI statuses</option>
           {% for s in ['unreviewed','extracted','open','upcoming','closed','unclear','not_competition'] %}
             <option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ s.replace('_',' ')|title }}</option>
           {% endfor %}
@@ -62,35 +70,72 @@
         <button type="submit">Filter</button>
       </form>
 
-      <form action="/extract-next" method="post" class="batch-form">
-        <label>AI extract next</label>
-        <input type="number" name="batch_size" min="1" max="25" value="10">
-        <button type="submit">Run batch</button>
-      </form>
+      <div class="batch-tools">
+        <form action="/reclassify" method="post">
+          <button type="submit" class="secondary">Re-run free local filter</button>
+        </form>
+        {% if view == 'opportunities' %}
+        <form action="/extract-next" method="post" class="batch-form">
+          <label>AI extract next</label>
+          <input type="number" name="batch_size" min="1" max="25" value="10">
+          <button type="submit">Run batch</button>
+        </form>
+        {% endif %}
+      </div>
     </section>
+
+    <p class="view-note">
+      {% if view == 'opportunities' %}
+        Showing posts with strong local competition, scholarship, award, program, internship, application, or deadline signals. No API credits are used for this filter.
+      {% elif view == 'review' %}
+        These posts have some opportunity-like language but not enough evidence for the local rules to decide confidently.
+      {% elif view == 'other' %}
+        These look more like college advice, study resources, tutorials, or unrelated saves. Paid AI actions are hidden here by default.
+      {% else %}
+        Showing every imported save.
+      {% endif %}
+    </p>
 
     <section class="cards">
       {% for c in competitions %}
-      <article class="card">
+      <article class="card {% if not c.local_is_opportunity %}non-opportunity{% endif %}">
         <div class="card-top">
           <div>
             <div class="badges">
-              <span class="badge status-{{ c.status }}">{{ c.status.replace('_',' ') }}</span>
+              <span class="badge local-kind kind-{{ c.local_kind }}">{{ (c.local_kind or 'unclassified').replace('_',' ') }}</span>
+              {% if c.local_is_opportunity %}
+                <span class="badge likely">likely opportunity</span>
+              {% endif %}
+              {% if c.status != 'unreviewed' %}
+                <span class="badge status-{{ c.status }}">{{ c.status.replace('_',' ') }}</span>
+              {% endif %}
               {% if c.verified %}<span class="badge verified">verified</span>{% endif %}
               {% if c.category %}<span class="badge">{{ c.category }}</span>{% endif %}
             </div>
-            <h3>{{ c.competition_name or c.import_title or 'Untitled competition' }}</h3>
+            <h3>{{ c.competition_name or c.import_title or 'Instagram saved post' }}</h3>
             {% if c.organizer %}<p class="organizer">{{ c.organizer }}</p>{% endif %}
           </div>
-          <div class="confidence">{{ ((c.ai_confidence or 0) * 100)|round|int }}%<span>confidence</span></div>
+          <div class="confidence">
+            {% if c.status != 'unreviewed' or (c.ai_confidence or 0) > 0 %}
+              {{ ((c.ai_confidence or 0) * 100)|round|int }}%<span>AI confidence</span>
+            {% else %}
+              {{ c.local_score or 0 }}%<span>local relevance</span>
+            {% endif %}
+          </div>
         </div>
 
+        {% if c.local_reason %}
+          <p class="local-reason">{{ c.local_reason }}</p>
+        {% endif %}
+
+        {% if c.local_is_opportunity or c.status != 'unreviewed' %}
         <div class="facts">
-          <div><span>Deadline</span><strong>{{ c.deadline or c.deadline_text or 'Unknown' }}</strong></div>
-          <div><span>Entry fee</span><strong>{{ c.entry_fee or 'Unknown' }}</strong></div>
-          <div><span>Prize</span><strong>{{ c.prize or 'Unknown' }}</strong></div>
-          <div><span>Eligibility</span><strong>{{ c.eligibility or 'Unknown' }}</strong></div>
+          <div><span>Deadline</span><strong>{{ c.deadline or c.deadline_text or 'Not extracted yet' }}</strong></div>
+          <div><span>Entry fee</span><strong>{{ c.entry_fee or 'Not extracted yet' }}</strong></div>
+          <div><span>Prize</span><strong>{{ c.prize or 'Not extracted yet' }}</strong></div>
+          <div><span>Eligibility</span><strong>{{ c.eligibility or 'Not extracted yet' }}</strong></div>
         </div>
+        {% endif %}
 
         {% if c.requirements %}<p class="notes"><strong>Requirements:</strong> {{ c.requirements }}</p>{% endif %}
         {% if c.verification_notes %}<p class="notes"><strong>Verification note:</strong> {{ c.verification_notes }}</p>{% endif %}
@@ -112,8 +157,10 @@
         {% endif %}
 
         <div class="actions">
-          <form action="/competitions/{{ c.id }}/extract" method="post"><button type="submit" class="secondary">Extract</button></form>
-          <form action="/competitions/{{ c.id }}/verify" method="post"><button type="submit">Verify online</button></form>
+          {% if c.local_is_opportunity %}
+            <form action="/competitions/{{ c.id }}/extract" method="post"><button type="submit" class="secondary">AI extract</button></form>
+            <form action="/competitions/{{ c.id }}/verify" method="post"><button type="submit">Verify online</button></form>
+          {% endif %}
           {% if c.instagram_url %}<a class="button-link secondary" href="{{ c.instagram_url }}" target="_blank" rel="noopener noreferrer">Instagram</a>{% endif %}
           {% if c.official_url %}<a class="button-link secondary" href="{{ c.official_url }}" target="_blank" rel="noopener noreferrer">Official site</a>{% endif %}
           <form action="/competitions/{{ c.id }}/delete" method="post" onsubmit="return confirm('Delete this record?')"><button type="submit" class="danger">Delete</button></form>
@@ -121,8 +168,8 @@
       </article>
       {% else %}
         <div class="empty">
-          <h2>No competitions yet</h2>
-          <p>Import <code>sample_import.csv</code> to see the workflow.</p>
+          <h2>No posts in this view</h2>
+          <p>Try another tab above or import your saved Instagram JSON.</p>
         </div>
       {% endfor %}
     </section>
