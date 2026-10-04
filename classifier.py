@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 
-CLASSIFIER_VERSION = 1
+CLASSIFIER_VERSION = 2
 
 # Deliberately simple, transparent rules. This stage is free/local and only
 # decides what is worth sending to the paid AI steps later.
@@ -48,9 +48,13 @@ ADVICE_MARKERS = (
     "college admissions",
     "college application",
     "college applications",
+    "college essay",
+    "college essays",
+    "essay advice",
     "common app",
     "supplemental essay",
     "personal statement",
+    "application tips",
     "interview answer",
     "college interview",
     "letter of rec",
@@ -102,8 +106,39 @@ def _opportunity_kind(text: str) -> str | None:
     return None
 
 
+def _prepare_text(title: str, raw_text: str) -> str:
+    """
+    Remove importer metadata and obvious social-media tag dumps before scoring.
+
+    In Meta exports, import_title is often the account/owner name rather than a
+    post title. If the same value appears in the "Instagram owner:" metadata,
+    do not let words in that account name affect classification.
+    """
+    raw_lower = raw_text.lower()
+    title_for_scoring = title
+    if title and f"instagram owner: {title.lower()}" in raw_lower:
+        title_for_scoring = ""
+
+    cleaned_lines: list[str] = []
+    for line in raw_text.splitlines():
+        stripped = line.strip()
+        lowered = stripped.lower()
+        if lowered.startswith("instagram owner:") or lowered.startswith("owner website:"):
+            continue
+        # Meta captions often finish with a long hashtag/keyword dump. Those
+        # words describe reach/SEO and should not decide whether the post is an
+        # actual opportunity.
+        if stripped.startswith("#"):
+            continue
+        if stripped.startswith("[") and stripped.endswith("]"):
+            continue
+        cleaned_lines.append(line)
+
+    return f"{title_for_scoring}\n" + "\n".join(cleaned_lines).lower()
+
+
 def classify_saved_post(title: str = "", raw_text: str = "") -> dict[str, Any]:
-    text = f"{title}\n{raw_text}".lower()
+    text = _prepare_text(title, raw_text)
     hits: list[str] = []
     raw_score = 0
 
@@ -119,13 +154,25 @@ def classify_saved_post(title: str = "", raw_text: str = "") -> dict[str, Any]:
     advice_hits = [p for p in ADVICE_MARKERS if p in text]
     resource_hits = [p for p in RESOURCE_MARKERS if p in text]
 
+    action_signal = any(
+        phrase in text
+        for phrase in (
+            "apply", "deadline", "open now", "applications open",
+            "free to apply", "prize", "eligibility", "winner", "win "
+        )
+    )
+
     if kind in {"scholarship", "internship", "research_program", "summer_program", "competition"}:
-        # A concrete opportunity noun is strong enough on its own.
-        is_opportunity = raw_score >= 5
+        is_opportunity = raw_score >= 5 and not (advice_hits and raw_score < 9)
     elif kind == "award":
-        # "Award" can also appear in generic admissions advice, so require one
-        # additional action/timing signal unless the score is already strong.
-        is_opportunity = raw_score >= 5
+        special_award_list = any(
+            phrase in text
+            for phrase in (
+                "awards anyone", "award anyone", "awards for high school",
+                "awards you can", "last minute awards"
+            )
+        )
+        is_opportunity = raw_score >= 5 and (action_signal or special_award_list)
     elif kind == "opportunity":
         is_opportunity = raw_score >= 5
     else:
@@ -139,6 +186,25 @@ def classify_saved_post(title: str = "", raw_text: str = "") -> dict[str, Any]:
             "local_score": score,
             "local_reason": f"Opportunity signals: {reason_terms}" if reason_terms else "Likely opportunity",
             "local_is_opportunity": 1,
+            "local_classifier_version": CLASSIFIER_VERSION,
+        }
+
+    # Prefer a clear advice/resource label over a weak accidental keyword hit.
+    if advice_hits and raw_score < 7:
+        return {
+            "local_kind": "college_advice",
+            "local_score": 10,
+            "local_reason": f"Looks like college/application advice: {', '.join(advice_hits[:3])}",
+            "local_is_opportunity": 0,
+            "local_classifier_version": CLASSIFIER_VERSION,
+        }
+
+    if resource_hits and raw_score < 7:
+        return {
+            "local_kind": "resource",
+            "local_score": 10,
+            "local_reason": f"Looks like a resource/tutorial post: {', '.join(resource_hits[:3])}",
+            "local_is_opportunity": 0,
             "local_classifier_version": CLASSIFIER_VERSION,
         }
 
