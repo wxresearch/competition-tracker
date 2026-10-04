@@ -21,3 +21,42 @@ def test_json_list():
     rows = parse_json(data)
     assert rows[0]["import_title"] == "Contest C"
     assert "$500" in rows[0]["raw_text"]
+
+
+def test_instagram_string_map_data():
+    data = b'''{
+      "saved_saved_media": [
+        {
+          "title": "essay competitions",
+          "string_map_data": {
+            "Saved on": {
+              "href": "https://www.instagram.com/p/ABC123/",
+              "timestamp": 1719763200
+            }
+          }
+        }
+      ]
+    }'''
+    rows = parse_json(data)
+    assert len(rows) == 1
+    assert rows[0]["instagram_url"] == "https://www.instagram.com/p/ABC123/"
+    assert rows[0]["import_title"] == "essay competitions"
+
+
+def test_instagram_string_list_data():
+    data = b'''[
+      {
+        "title": "",
+        "string_list_data": [
+          {
+            "href": "https://www.instagram.com/p/XYZ789/",
+            "value": "example_account",
+            "timestamp": 1719763200
+          }
+        ]
+      }
+    ]'''
+    rows = parse_json(data)
+    assert len(rows) == 1
+    assert rows[0]["instagram_url"] == "https://www.instagram.com/p/XYZ789/"
+    assert rows[0]["import_title"] == "example_account"
