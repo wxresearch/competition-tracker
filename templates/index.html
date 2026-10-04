@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Competition Tracker</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">PERSONAL OPPORTUNITY DATABASE</p>
+        <h1>Competition Tracker</h1>
+        <p class="subtitle">Turn saved competition posts into deadlines, fees, prizes, requirements, and verified sources.</p>
+      </div>
+      <div class="stats">
+        <div><strong>{{ stats.total }}</strong><span>Total</span></div>
+        <div><strong>{{ stats.verified }}</strong><span>Verified</span></div>
+        <div><strong>{{ stats.open }}</strong><span>Open / Upcoming</span></div>
+        <div><strong>{{ stats.unreviewed }}</strong><span>Unreviewed</span></div>
+      </div>
+    </header>
+
+    {% if message %}<div class="notice success">{{ message }}</div>{% endif %}
+    {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
+    {% if not has_api_key %}
+      <div class="notice warn"><strong>AI is not configured.</strong> Importing works now, but Extract and Verify need an OPENAI_API_KEY in <code>.env</code>.</div>
+    {% endif %}
+
+    <section class="panel import-panel">
+      <div>
+        <h2>Import your saved competitions</h2>
+        <p>Upload CSV or JSON. Best columns: <code>title</code>, <code>caption</code>, <code>instagram_url</code>, <code>official_url</code>.</p>
+      </div>
+      <form action="/import" method="post" enctype="multipart/form-data" class="upload-form">
+        <input type="file" name="file" accept=".csv,.json" required>
+        <button type="submit">Import</button>
+      </form>
+    </section>
+
+    <section class="panel controls">
+      <form method="get" action="/" class="filters">
+        <input type="search" name="q" value="{{ q }}" placeholder="Search name, organizer, prize...">
+        <select name="category">
+          <option value="">All categories</option>
+          {% for c in categories %}
+            <option value="{{ c }}" {% if c == category %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+        <select name="status">
+          <option value="">All statuses</option>
+          {% for s in ['unreviewed','extracted','open','upcoming','closed','unclear','not_competition'] %}
+            <option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ s.replace('_',' ')|title }}</option>
+          {% endfor %}
+        </select>
+        <select name="verified">
+          <option value="">Any verification</option>
+          <option value="1" {% if verified == '1' %}selected{% endif %}>Verified</option>
+          <option value="0" {% if verified == '0' %}selected{% endif %}>Not verified</option>
+        </select>
+        <button type="submit">Filter</button>
+      </form>
+
+      <form action="/extract-next" method="post" class="batch-form">
+        <label>AI extract next</label>
+        <input type="number" name="batch_size" min="1" max="25" value="10">
+        <button type="submit">Run batch</button>
+      </form>
+    </section>
+
+    <section class="cards">
+      {% for c in competitions %}
+      <article class="card">
+        <div class="card-top">
+          <div>
+            <div class="badges">
+              <span class="badge status-{{ c.status }}">{{ c.status.replace('_',' ') }}</span>
+              {% if c.verified %}<span class="badge verified">verified</span>{% endif %}
+              {% if c.category %}<span class="badge">{{ c.category }}</span>{% endif %}
+            </div>
+            <h3>{{ c.competition_name or c.import_title or 'Untitled competition' }}</h3>
+            {% if c.organizer %}<p class="organizer">{{ c.organizer }}</p>{% endif %}
+          </div>
+          <div class="confidence">{{ ((c.ai_confidence or 0) * 100)|round|int }}%<span>confidence</span></div>
+        </div>
+
+        <div class="facts">
+          <div><span>Deadline</span><strong>{{ c.deadline or c.deadline_text or 'Unknown' }}</strong></div>
+          <div><span>Entry fee</span><strong>{{ c.entry_fee or 'Unknown' }}</strong></div>
+          <div><span>Prize</span><strong>{{ c.prize or 'Unknown' }}</strong></div>
+          <div><span>Eligibility</span><strong>{{ c.eligibility or 'Unknown' }}</strong></div>
+        </div>
+
+        {% if c.requirements %}<p class="notes"><strong>Requirements:</strong> {{ c.requirements }}</p>{% endif %}
+        {% if c.verification_notes %}<p class="notes"><strong>Verification note:</strong> {{ c.verification_notes }}</p>{% endif %}
+
+        {% if c.raw_text %}
+          <details>
+            <summary>Imported caption / notes</summary>
+            <p class="raw">{{ c.raw_text }}</p>
+          </details>
+        {% endif %}
+
+        {% if c.sources %}
+          <div class="sources">
+            <strong>Sources</strong>
+            {% for source in c.sources %}
+              <a href="{{ source.url }}" target="_blank" rel="noopener noreferrer">{{ source.title or source.url }}</a>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        <div class="actions">
+          <form action="/competitions/{{ c.id }}/extract" method="post"><button type="submit" class="secondary">Extract</button></form>
+          <form action="/competitions/{{ c.id }}/verify" method="post"><button type="submit">Verify online</button></form>
+          {% if c.instagram_url %}<a class="button-link secondary" href="{{ c.instagram_url }}" target="_blank" rel="noopener noreferrer">Instagram</a>{% endif %}
+          {% if c.official_url %}<a class="button-link secondary" href="{{ c.official_url }}" target="_blank" rel="noopener noreferrer">Official site</a>{% endif %}
+          <form action="/competitions/{{ c.id }}/delete" method="post" onsubmit="return confirm('Delete this record?')"><button type="submit" class="danger">Delete</button></form>
+        </div>
+      </article>
+      {% else %}
+        <div class="empty">
+          <h2>No competitions yet</h2>
+          <p>Import <code>sample_import.csv</code> to see the workflow.</p>
+        </div>
+      {% endfor %}
+    </section>
+  </main>
+</body>
+</html>
