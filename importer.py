@@ -4,6 +4,7 @@ import csv
 import io
 import json
 from typing import Any
+from urllib.parse import urlparse
 
 
 ALIASES = {
@@ -23,42 +24,70 @@ def _pick(record: dict[str, Any], aliases: list[str]) -> str:
     return ""
 
 
+def _is_instagram_post_url(url: str) -> bool:
+    """Only accept actual post/reel/media URLs, not profiles, hashtags, etc."""
+    if not url:
+        return False
+    try:
+        parsed = urlparse(url)
+        host = parsed.netloc.lower().removeprefix("www.")
+        path = parsed.path.lower()
+    except Exception:
+        return False
+
+    if host not in {"instagram.com", "m.instagram.com"}:
+        return False
+
+    return (
+        path.startswith("/p/")
+        or path.startswith("/reel/")
+        or path.startswith("/reels/")
+        or path.startswith("/tv/")
+    )
+
+
 def normalize_record(record: dict[str, Any]) -> dict[str, str]:
     out = {key: _pick(record, aliases) for key, aliases in ALIASES.items()}
 
     url = out["instagram_url"]
-    if url and "instagram.com" not in url.lower():
-        if not out["imported_official_url"]:
+    if url and not _is_instagram_post_url(url):
+        if "instagram.com" not in url.lower() and not out["imported_official_url"]:
             out["imported_official_url"] = url
         out["instagram_url"] = ""
     return out
 
 
 def _instagram_href_from_map(record: dict[str, Any]) -> str:
-    """Extract a saved-post URL from Instagram export string_map_data."""
+    """
+    Extract the actual saved-post URL from Instagram export string_map_data.
+
+    We intentionally ONLY trust the 'Saved on' entry. Other metadata keys such as
+    Owner, Hashtags, Brand partner, etc. may also contain Instagram URLs, but those
+    are not saved posts.
+    """
     smd = record.get("string_map_data")
     if not isinstance(smd, dict):
         return ""
 
-    # Typical saved_posts.json shape:
-    # {"title": "...", "string_map_data": {"Saved on": {"href": "...", "timestamp": ...}}}
-    for value in smd.values():
+    for key, value in smd.items():
+        if str(key).strip().lower() != "saved on":
+            continue
         if isinstance(value, dict):
             href = str(value.get("href") or "").strip()
-            if "instagram.com" in href.lower():
+            if _is_instagram_post_url(href):
                 return href
     return ""
 
 
 def _instagram_href_from_list(record: dict[str, Any]) -> str:
-    """Extract a URL from Instagram export string_list_data."""
+    """Fallback for export variants using string_list_data."""
     sld = record.get("string_list_data")
     if not isinstance(sld, list):
         return ""
     for item in sld:
         if isinstance(item, dict):
             href = str(item.get("href") or "").strip()
-            if "instagram.com" in href.lower():
+            if _is_instagram_post_url(href):
                 return href
     return ""
 
@@ -76,13 +105,6 @@ def _instagram_value_from_list(record: dict[str, Any]) -> str:
 
 
 def _instagram_export_record(record: dict[str, Any]) -> dict[str, str] | None:
-    """
-    Convert an Instagram export entry into our normalized row.
-
-    Supports both common Meta export shapes:
-    - string_map_data -> {"Saved on": {"href": ..., "timestamp": ...}}
-    - string_list_data -> [{"href": ..., "value": ..., "timestamp": ...}]
-    """
     href = _instagram_href_from_map(record) or _instagram_href_from_list(record)
     if not href:
         return None
@@ -90,8 +112,6 @@ def _instagram_export_record(record: dict[str, Any]) -> dict[str, str] | None:
     title = str(record.get("title") or "").strip()
     value = _instagram_value_from_list(record)
 
-    # Keep whatever descriptive information the export gives us. Instagram JSON
-    # often does not include the caption, so title/value may be all we have.
     raw_bits = []
     if title:
         raw_bits.append(f"Instagram export title/collection: {title}")
@@ -125,24 +145,25 @@ def _find_records(value: Any) -> list[dict[str, str]]:
     if not isinstance(value, dict):
         return records
 
-    # First, recognize Instagram's own export objects.
     instagram_row = _instagram_export_record(value)
     if instagram_row:
         records.append(instagram_row)
-        # Do not recurse into the nested string_map/list data or we would
-        # duplicate the same saved item.
         return records
 
-    # Then support user-created / generic JSON records.
+    # Generic JSON records are supported too, but only when they normalize into
+    # meaningful fields. Nested Instagram metadata is deliberately ignored.
     keys = {str(k).lower() for k in value}
     hints = {alias for group in ALIASES.values() for alias in group}
     if keys & hints:
         normalized = normalize_record(value)
-        if any(normalized.values()):
+        if (
+            normalized["raw_text"]
+            or normalized["imported_official_url"]
+            or normalized["instagram_url"]
+        ):
             records.append(normalized)
             return records
 
-    # Otherwise recurse through wrapper objects such as saved_saved_media.
     for child in value.values():
         records.extend(_find_records(child))
 
