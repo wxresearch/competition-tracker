@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 
-CLASSIFIER_VERSION = 2
+CLASSIFIER_VERSION = 3
 
 # Deliberately simple, transparent rules. This stage is free/local and only
 # decides what is worth sending to the paid AI steps later.
@@ -31,6 +31,7 @@ POSITIVE_WEIGHTS = {
     "prize": 3,
     "prizes": 3,
     "apply now": 3,
+    "apply right now": 3,
     "apply to": 2,
     "apply for": 2,
     "applications open": 3,
