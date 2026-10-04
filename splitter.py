@@ -43,6 +43,12 @@ DATE_ANY_RE = re.compile(
     + r")\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b"
 )
 
+DATE_DAY_MONTH_RE = re.compile(
+    r"(?i)\b(\d{1,2})(?:st|nd|rd|th)?\s+("
+    + "|".join(sorted(MONTHS, key=len, reverse=True))
+    + r")\b"
+)
+
 NAME_SUFFIX_RE = re.compile(
     r"(?<![\w@])("
     r"(?:[A-Z][A-Za-z0-9&.'’\-]*|[A-Z]{2,}|(?:of|in|for|the|and|Global|Young|Student|Students|National|University|School|Math|Mathematics|Essay|Case|Computing))"
@@ -74,7 +80,7 @@ GENERIC_BAD_NAMES = {
 }
 
 LEADING_NOISE = (
-    "from ", "and ", "the ", "a ", "an ", "alongside ", "including ",
+    "from ", "and ", "a ", "an ", "alongside ", "including ",
     "like ", "try ", "enter ", "join ", "apply to ", "apply for ",
 )
 
@@ -139,11 +145,26 @@ def _valid_name(name: str) -> bool:
     return bool(re.search(r"\b(?:[A-Z]{2,}|[A-Z][a-z]{2,})\b", name))
 
 
-def _date_parts(text: str) -> tuple[int, int] | None:
-    m = DATE_ANY_RE.search(text or "")
-    if not m:
-        return None
-    return MONTHS[m.group(1).lower()], int(m.group(2))
+def _date_parts(text: str) -> tuple[int, int, str] | None:
+    value = text or ""
+
+    month_first = DATE_ANY_RE.search(value)
+    if month_first:
+        return (
+            MONTHS[month_first.group(1).lower()],
+            int(month_first.group(2)),
+            month_first.group(0),
+        )
+
+    day_first = DATE_DAY_MONTH_RE.search(value)
+    if day_first:
+        return (
+            MONTHS[day_first.group(2).lower()],
+            int(day_first.group(1)),
+            day_first.group(0),
+        )
+
+    return None
 
 
 def _normalized_date(month: int, day: int, source_timestamp: int | None) -> str | None:
@@ -164,9 +185,7 @@ def _timing_from_context(context: str, source_timestamp: int | None) -> dict[str
     parts = _date_parts(context)
     if not parts:
         return {"deadline": None, "deadline_text": None, "source_timing": None}
-    month, day = parts
-    matched = DATE_ANY_RE.search(context)
-    date_text = matched.group(0) if matched else None
+    month, day, date_text = parts
     low = context.lower()
 
     if any(word in low for word in ("open ", "opens ", "opening ", "follows on")):
