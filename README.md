@@ -19,7 +19,7 @@ It is designed for competitions, essay contests, olympiads, scholarships, resear
   - prize
   - eligibility
   - requirements
-- Can **verify a competition on the live web** and save cited sources.
+- Can **verify an opportunity on the live web for free-tier usage** with Tavily + Gemini and save the retrieved sources.
 - Sorts records by deadline.
 - Filters by category, status, and verification state.
 - Uses a local **SQLite** database, so you do not need to set up Postgres for the MVP.
@@ -53,14 +53,27 @@ Install packages:
 pip install -r requirements.txt
 ```
 
-## 2. Configure AI
+## 2. Configure free AI + web verification
 
-Copy the example environment file:
+This project no longer requires OpenAI credits.
 
-### Windows PowerShell
+It uses:
 
-```powershell
-Copy-Item .env.example .env
+- **Google Gemini** for structured extraction and reasoning. The default is `gemini-3.8-flash`.
+- **Tavily** for live web search and page extraction.
+
+Create the two API keys:
+
+1. Gemini: https://aistudio.google.com/apikey
+2. Tavily: https://app.tavily.com/
+
+Copy the example environment file.
+
+### Windows Command Prompt
+
+```cmd
+copy .env.example .env
+notepad .env
 ```
 
 ### macOS / Linux
@@ -69,17 +82,25 @@ Copy-Item .env.example .env
 cp .env.example .env
 ```
 
-Then edit `.env`:
+Set:
 
 ```env
-OPENAI_API_KEY=your_api_key_here
-OPENAI_EXTRACT_MODEL=gpt-6-luna
-OPENAI_VERIFY_MODEL=gpt-6.1-sol
+GEMINI_API_KEY=your_gemini_key_here
+GEMINI_MODEL=gemini-3.8-flash
+TAVILY_API_KEY=your_tavily_key_here
 ```
 
-**Do not commit `.env` to GitHub.** It is already included in `.gitignore`.
+**Never commit `.env` to GitHub.** It is already ignored by `.gitignore`.
 
-The extraction model is intentionally cheaper because you may have hundreds of saved posts. Web verification is a separate action, so you can verify only opportunities you care about.
+### What uses credits?
+
+- Importing Instagram JSON: **local/free**
+- Splitting roundup captions into named opportunities: **local/free**
+- Local filtering: **local/free**
+- Gemini detail extraction: uses Gemini's API free tier when available
+- **Verify Free**: uses Tavily web search/extraction plus Gemini
+
+The verifier performs an advanced Tavily search, selects the strongest sources, extracts up to five pages, and asks Gemini to structure only the evidence returned by Tavily. Official organizer/rules/application pages are prioritized over social posts and aggregators.
 
 ## 3. Run it
 
@@ -114,16 +135,14 @@ A plain JSON array using the same field names also works.
 
 ## Recommended workflow
 
-1. Export your Instagram saved posts or compile them manually into CSV/JSON.
-2. Import them. Local classification runs automatically and does **not** use API credits.
-3. Start in **Likely opportunities**. Check **Needs review** for borderline posts; ordinary advice/resources live under **Other saves**.
-4. Click **AI extract** only on opportunities where you want structured deadline/fee/prize/eligibility fields.
-5. Click **Verify online** only for opportunities you seriously care about.
-6. The verifier searches the live web, prioritizes official sources, and tries to determine the current or next cycle rather than blindly trusting an old Instagram post.
+1. Import your Instagram `saved_posts.json`.
+2. The app locally separates source posts from actual named opportunities and splits list captions into child records.
+3. Review **Actual opportunities**, **Source posts**, and **Needs review**.
+4. Use **Gemini extract details** when a caption contains useful details that are not yet structured.
+5. Use **Verify Free** on opportunities you care about. Tavily searches the live web and Gemini evaluates the retrieved evidence.
+6. Prefer verified current-cycle data over dates copied from old Instagram posts.
 
-You can click **Re-run free local filter** whenever the built-in classification rules are updated. Existing database rows are also migrated and classified automatically when the app starts.
-
-This separation is intentional: verifying every saved item can cost more than extracting it, and many saved posts may already be expired or irrelevant.
+Re-importing the same Instagram export refreshes existing source records rather than duplicating them.
 
 ## Important limitation
 
@@ -143,6 +162,8 @@ pytest
 competition-tracker/
 ├── app.py
 ├── ai.py
+├── classifier.py
+├── splitter.py
 ├── db.py
 ├── importer.py
 ├── models.py
