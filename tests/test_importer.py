@@ -105,3 +105,25 @@ def test_does_not_import_profile_only_string_list_data():
     ]'''
     rows = parse_json(data)
     assert rows == []
+
+
+def test_instagram_string_map_alternate_label():
+    data = b'''{
+      "saved_saved_media": [
+        {
+          "title": "my saves",
+          "string_map_data": {
+            "Media": {
+              "href": "https://www.instagram.com/reel/ALT123/",
+              "timestamp": 1719763200
+            },
+            "Owner": {
+              "href": "https://www.instagram.com/some_owner/"
+            }
+          }
+        }
+      ]
+    }'''
+    rows = parse_json(data)
+    assert len(rows) == 1
+    assert rows[0]["instagram_url"] == "https://www.instagram.com/reel/ALT123/"
