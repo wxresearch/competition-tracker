@@ -72,8 +72,13 @@ async def import_file(file: UploadFile = File(...)):
     try:
         data = await file.read()
         rows = parse_upload(file.filename or "", data)
-        count = db.insert_imported(rows)
-        return go(message=f"Imported {count} new saved-post records. Local filtering is applied automatically.")
+        result = db.insert_imported(rows)
+        return go(
+            message=(
+                f"Import complete: {result['new']} new source posts, "
+                f"{result['refreshed']} refreshed, and {result['children']} named opportunities extracted locally."
+            )
+        )
     except Exception as exc:
         return go(error=str(exc))
 
@@ -82,7 +87,9 @@ async def import_file(file: UploadFile = File(...)):
 def extract(comp_id: int):
     record = db.get_competition(comp_id)
     if not record:
-        return go(error="Competition not found.")
+        return go(error="Opportunity not found.")
+    if record.get("record_origin") != "split_child":
+        return go(error="This is a source post, not an individual opportunity. Open its extracted items instead.")
     try:
         result = extract_competition(record)
         if not result.is_competition:
@@ -97,14 +104,19 @@ def extract(comp_id: int):
         db.update_extraction(comp_id, values)
         return go(message="Extracted competition details.")
     except Exception as exc:
-        return go(error=str(exc))
+        message = str(exc)
+        if "insufficient_quota" in message or "credit_balance_exhausted" in message or "no credits remaining" in message.lower():
+            return go(error="OpenAI API credits are exhausted. Local import, filtering, and list splitting still work without API credits.")
+        return go(error=message)
 
 
 @app.post("/competitions/{comp_id}/verify")
 def verify(comp_id: int):
     record = db.get_competition(comp_id)
     if not record:
-        return go(error="Competition not found.")
+        return go(error="Opportunity not found.")
+    if record.get("record_origin") != "split_child":
+        return go(error="Verify individual extracted opportunities, not the source-list post.")
     try:
         result, sources = verify_competition(record)
         values = result.model_dump()
@@ -113,7 +125,10 @@ def verify(comp_id: int):
         db.update_verification(comp_id, values, sources)
         return go(message="Verified against current web sources.")
     except Exception as exc:
-        return go(error=str(exc))
+        message = str(exc)
+        if "insufficient_quota" in message or "credit_balance_exhausted" in message or "no credits remaining" in message.lower():
+            return go(error="OpenAI API credits are exhausted. Local import, filtering, and list splitting still work without API credits.")
+        return go(error=message)
 
 
 @app.post("/extract-next")
@@ -139,8 +154,13 @@ def extract_next(batch_size: int = Form(default=10)):
 
 @app.post("/reclassify")
 def reclassify():
-    count = db.reclassify_all(force=True)
-    return go(message=f"Reclassified {count} saved posts locally. No API credits were used.")
+    result = db.analyze_all_source_posts(force=True)
+    return go(
+        message=(
+            f"Rebuilt local analysis for {result['analyzed']} source posts and "
+            f"extracted {result['children']} named opportunities. No API credits were used."
+        )
+    )
 
 
 @app.post("/competitions/{comp_id}/delete")
