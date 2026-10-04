@@ -68,7 +68,7 @@ def _is_instagram_post_url(url: str) -> bool:
     )
 
 
-def normalize_record(record: dict[str, Any]) -> dict[str, str]:
+def normalize_record(record: dict[str, Any]) -> dict[str, Any]:
     out = {key: _pick(record, aliases) for key, aliases in ALIASES.items()}
 
     url = out["instagram_url"]
@@ -76,6 +76,11 @@ def normalize_record(record: dict[str, Any]) -> dict[str, str]:
         if "instagram.com" not in url.lower() and not out["imported_official_url"]:
             out["imported_official_url"] = url
         out["instagram_url"] = ""
+
+    out.setdefault("source_timestamp", record.get("timestamp"))
+    out.setdefault("owner_name", "")
+    out.setdefault("owner_username", "")
+    out.setdefault("owner_url", "")
     return out
 
 
@@ -106,7 +111,7 @@ def _owner_from_label_values(label_values: list[Any]) -> tuple[str, str, str]:
     return owner_name, owner_username, owner_url
 
 
-def _label_values_export_record(record: dict[str, Any]) -> dict[str, str] | None:
+def _label_values_export_record(record: dict[str, Any]) -> dict[str, Any] | None:
     """
     Parse the saved_posts.json format used by newer Meta exports:
 
@@ -169,6 +174,10 @@ def _label_values_export_record(record: dict[str, Any]) -> dict[str, str] | None
         "raw_text": "\n\n".join(raw_parts),
         "instagram_url": url,
         "imported_official_url": "",
+        "source_timestamp": record.get("timestamp"),
+        "owner_name": owner_name,
+        "owner_username": owner_username,
+        "owner_url": owner_url,
     }
 
 
@@ -209,7 +218,7 @@ def _instagram_value_from_list(record: dict[str, Any]) -> str:
     return ""
 
 
-def _instagram_export_record(record: dict[str, Any]) -> dict[str, str] | None:
+def _instagram_export_record(record: dict[str, Any]) -> dict[str, Any] | None:
     href = _instagram_href_from_map(record) or _instagram_href_from_list(record)
     if not href:
         return None
@@ -228,10 +237,14 @@ def _instagram_export_record(record: dict[str, Any]) -> dict[str, str] | None:
         "raw_text": "\n".join(raw_bits),
         "instagram_url": href,
         "imported_official_url": "",
+        "source_timestamp": record.get("timestamp"),
+        "owner_name": "",
+        "owner_username": value,
+        "owner_url": "",
     }
 
 
-def parse_csv(data: bytes) -> list[dict[str, str]]:
+def parse_csv(data: bytes) -> list[dict[str, Any]]:
     text = data.decode("utf-8-sig", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
     if not reader.fieldnames:
@@ -239,8 +252,8 @@ def parse_csv(data: bytes) -> list[dict[str, str]]:
     return [normalize_record(dict(row)) for row in reader]
 
 
-def _find_records(value: Any) -> list[dict[str, str]]:
-    records: list[dict[str, str]] = []
+def _find_records(value: Any) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
 
     if isinstance(value, list):
         for item in value:
@@ -281,12 +294,12 @@ def _find_records(value: Any) -> list[dict[str, str]]:
     return records
 
 
-def parse_json(data: bytes) -> list[dict[str, str]]:
+def parse_json(data: bytes) -> list[dict[str, Any]]:
     obj = json.loads(data.decode("utf-8-sig", errors="replace"))
     return _find_records(obj)
 
 
-def parse_upload(filename: str, data: bytes) -> list[dict[str, str]]:
+def parse_upload(filename: str, data: bytes) -> list[dict[str, Any]]:
     lower = filename.lower()
     if lower.endswith(".csv"):
         return parse_csv(data)
