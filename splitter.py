@@ -184,14 +184,24 @@ def _date_parts(text: str, near_name: str = "") -> tuple[int, int, str] | None:
         return None
 
     if near_name:
-        name_pos = (text or "").lower().find(near_name.lower())
+        value_lower = (text or "").lower()
+        name_pos = value_lower.find(near_name.lower())
         if name_pos >= 0:
-            name_mid = name_pos + len(near_name) / 2
-            chosen = min(
-                candidates,
-                key=lambda item: abs(((item[3] + item[4]) / 2) - name_mid),
-            )
-            return chosen[0], chosen[1], chosen[2]
+            name_end = name_pos + len(near_name)
+
+            # In list captions the timing usually follows the item it belongs
+            # to: "Diamond Challenge opens 16 September". Prefer the first
+            # date after the name, rather than whichever date is geometrically
+            # closest in a sentence containing several opportunities.
+            following = [item for item in candidates if item[3] >= name_end]
+            if following:
+                chosen = min(following, key=lambda item: item[3] - name_end)
+                return chosen[0], chosen[1], chosen[2]
+
+            preceding = [item for item in candidates if item[4] <= name_pos]
+            if preceding:
+                chosen = min(preceding, key=lambda item: name_pos - item[4])
+                return chosen[0], chosen[1], chosen[2]
 
     chosen = candidates[0]
     return chosen[0], chosen[1], chosen[2]
