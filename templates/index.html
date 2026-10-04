@@ -24,8 +24,16 @@
 
     {% if message %}<div class="notice success">{{ message }}</div>{% endif %}
     {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
-    {% if not has_api_key %}
-      <div class="notice warn"><strong>Paid AI is not configured.</strong> Importing, local filtering, and list splitting still work without an API key.</div>
+    {% if not has_gemini_key or not has_tavily_key %}
+      <div class="notice warn">
+        <strong>Free verification setup:</strong>
+        {% if not has_gemini_key %} add <code>GEMINI_API_KEY</code>{% endif %}
+        {% if not has_gemini_key and not has_tavily_key %} and{% endif %}
+        {% if not has_tavily_key %} add <code>TAVILY_API_KEY</code>{% endif %}
+        to <code>.env</code>. Local import/splitting works either way.
+      </div>
+    {% else %}
+      <div class="notice success"><strong>Free verification ready.</strong> Gemini + Tavily are configured.</div>
     {% endif %}
 
     <section class="panel import-panel">
@@ -85,9 +93,9 @@
         <form action="/reclassify" method="post">
           <button type="submit" class="secondary">Rebuild local extraction</button>
         </form>
-        {% if view == 'opportunities' and has_api_key %}
+        {% if view == 'opportunities' and has_gemini_key %}
         <form action="/extract-next" method="post" class="batch-form">
-          <label>Paid AI extract next</label>
+          <label>Free Gemini extract next</label>
           <input type="number" name="batch_size" min="1" max="25" value="5">
           <button type="submit">Run</button>
         </form>
@@ -221,9 +229,11 @@
 
         <div class="actions">
           {% if c.record_origin == 'split_child' %}
-            {% if has_api_key %}
-              <form action="/competitions/{{ c.id }}/extract" method="post"><button type="submit" class="secondary">AI extract details</button></form>
-              <form action="/competitions/{{ c.id }}/verify" method="post"><button type="submit">Verify online</button></form>
+            {% if has_gemini_key %}
+              <form action="/competitions/{{ c.id }}/extract" method="post"><button type="submit" class="secondary">Gemini extract details</button></form>
+            {% endif %}
+            {% if free_verify_ready %}
+              <form action="/competitions/{{ c.id }}/verify" method="post"><button type="submit">Verify Free</button></form>
             {% endif %}
             {% if c.instagram_url %}<a class="button-link secondary" href="{{ c.instagram_url }}" target="_blank" rel="noopener noreferrer">Source Instagram</a>{% endif %}
           {% else %}
