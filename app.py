@@ -62,7 +62,9 @@ def home(
             "view": view,
             "message": message,
             "error": error,
-            "has_api_key": bool(os.getenv("OPENAI_API_KEY")),
+            "has_gemini_key": bool(os.getenv("GEMINI_API_KEY")),
+            "has_tavily_key": bool(os.getenv("TAVILY_API_KEY")),
+            "free_verify_ready": bool(os.getenv("GEMINI_API_KEY") and os.getenv("TAVILY_API_KEY")),
         },
     )
 
@@ -105,8 +107,11 @@ def extract(comp_id: int):
         return go(message="Extracted competition details.")
     except Exception as exc:
         message = str(exc)
-        if "insufficient_quota" in message or "credit_balance_exhausted" in message or "no credits remaining" in message.lower():
-            return go(error="OpenAI API credits are exhausted. Local import, filtering, and list splitting still work without API credits.")
+        lower = message.lower()
+        if "gemini_api_key is missing" in lower:
+            return go(error="Gemini is not configured yet. Add GEMINI_API_KEY to your .env file.")
+        if "429" in message or "quota" in lower or "rate limit" in lower:
+            return go(error="The free AI service hit a temporary quota/rate limit. Try again later; your local data is safe.")
         return go(error=message)
 
 
@@ -126,8 +131,13 @@ def verify(comp_id: int):
         return go(message="Verified against current web sources.")
     except Exception as exc:
         message = str(exc)
-        if "insufficient_quota" in message or "credit_balance_exhausted" in message or "no credits remaining" in message.lower():
-            return go(error="OpenAI API credits are exhausted. Local import, filtering, and list splitting still work without API credits.")
+        lower = message.lower()
+        if "gemini_api_key is missing" in lower:
+            return go(error="Gemini is not configured yet. Add GEMINI_API_KEY to your .env file.")
+        if "tavily_api_key is missing" in lower:
+            return go(error="Tavily is not configured yet. Add TAVILY_API_KEY to your .env file.")
+        if "429" in message or "quota" in lower or "rate limit" in lower or "credits" in lower:
+            return go(error="The free verification service hit its current usage limit. Try again after the service resets, or check your Gemini/Tavily free-tier usage.")
         return go(error=message)
 
 
