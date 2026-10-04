@@ -152,3 +152,34 @@ def test_mojibake_repair_in_meta_caption():
     rows = parse_json(json.dumps(obj).encode())
     assert "It’s free" in rows[0]["raw_text"]
     assert "🎓" in rows[0]["raw_text"]
+
+
+def test_meta_import_preserves_timestamp_and_owner_fields():
+    obj = [
+        {
+            "timestamp": 1790893224,
+            "label_values": [
+                {"label": "URL", "href": "https://www.instagram.com/p/ABC123/"},
+                {"label": "Caption", "value": "Oct 2: Example Competition"},
+                {
+                    "title": "Owner",
+                    "dict": [
+                        {
+                            "dict": [
+                                {"label": "URL", "value": "https://example.com"},
+                                {"label": "Name", "value": "Example Owner"},
+                                {"label": "Username", "value": "example_owner"},
+                            ]
+                        }
+                    ],
+                },
+            ],
+        }
+    ]
+    import json
+
+    rows = parse_json(json.dumps(obj).encode())
+    assert rows[0]["source_timestamp"] == 1790893224
+    assert rows[0]["owner_name"] == "Example Owner"
+    assert rows[0]["owner_username"] == "example_owner"
+    assert rows[0]["owner_url"] == "https://example.com"
