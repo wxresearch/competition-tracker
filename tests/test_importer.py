@@ -49,7 +49,7 @@ def test_instagram_string_list_data():
         "title": "",
         "string_list_data": [
           {
-            "href": "https://www.instagram.com/p/XYZ789/",
+            "href": "https://www.instagram.com/reel/XYZ789/",
             "value": "example_account",
             "timestamp": 1719763200
           }
@@ -58,5 +58,50 @@ def test_instagram_string_list_data():
     ]'''
     rows = parse_json(data)
     assert len(rows) == 1
-    assert rows[0]["instagram_url"] == "https://www.instagram.com/p/XYZ789/"
+    assert rows[0]["instagram_url"] == "https://www.instagram.com/reel/XYZ789/"
     assert rows[0]["import_title"] == "example_account"
+
+
+def test_ignores_owner_hashtag_brand_partner_metadata():
+    data = b'''{
+      "saved_saved_media": [
+        {
+          "title": "essay competitions",
+          "string_map_data": {
+            "Saved on": {
+              "href": "https://www.instagram.com/p/REALPOST/",
+              "timestamp": 1719763200
+            },
+            "Owner": {
+              "href": "https://www.instagram.com/example_owner/"
+            },
+            "Hashtags": {
+              "href": "https://www.instagram.com/explore/tags/essay/"
+            },
+            "Brand partner": {
+              "href": "https://www.instagram.com/example_brand/"
+            }
+          }
+        }
+      ]
+    }'''
+    rows = parse_json(data)
+    assert len(rows) == 1
+    assert rows[0]["instagram_url"] == "https://www.instagram.com/p/REALPOST/"
+    assert rows[0]["import_title"] == "essay competitions"
+
+
+def test_does_not_import_profile_only_string_list_data():
+    data = b'''[
+      {
+        "title": "Owner",
+        "string_list_data": [
+          {
+            "href": "https://www.instagram.com/example_owner/",
+            "value": "example_owner"
+          }
+        ]
+      }
+    ]'''
+    rows = parse_json(data)
+    assert rows == []
