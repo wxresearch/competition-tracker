@@ -7,6 +7,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterable
 
+from classifier import CLASSIFIER_VERSION, classify_saved_post
+
 DB_PATH = Path(os.getenv("DATABASE_PATH", "data/competitions.db"))
 
 
@@ -25,6 +27,12 @@ def connect():
         conn.commit()
     finally:
         conn.close()
+
+
+def _ensure_column(conn: sqlite3.Connection, name: str, definition: str) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(competitions)").fetchall()}
+    if name not in columns:
+        conn.execute(f"ALTER TABLE competitions ADD COLUMN {name} {definition}")
 
 
 def init_db() -> None:
@@ -52,6 +60,11 @@ def init_db() -> None:
                 status TEXT DEFAULT 'unreviewed',
                 verification_notes TEXT,
                 sources_json TEXT DEFAULT '[]',
+                local_kind TEXT,
+                local_score INTEGER DEFAULT 0,
+                local_reason TEXT,
+                local_is_opportunity INTEGER DEFAULT 0,
+                local_classifier_version INTEGER DEFAULT 0,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
@@ -61,6 +74,69 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_comp_verified ON competitions(verified);
             """
         )
+
+        # Lightweight migration for databases created by earlier versions.
+        _ensure_column(conn, "local_kind", "TEXT")
+        _ensure_column(conn, "local_score", "INTEGER DEFAULT 0")
+        _ensure_column(conn, "local_reason", "TEXT")
+        _ensure_column(conn, "local_is_opportunity", "INTEGER DEFAULT 0")
+        _ensure_column(conn, "local_classifier_version", "INTEGER DEFAULT 0")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_comp_local_opportunity ON competitions(local_is_opportunity)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_comp_local_kind ON competitions(local_kind)"
+        )
+
+    reclassify_all(force=False)
+
+
+def _classification(title: str, raw_text: str) -> dict[str, Any]:
+    return classify_saved_post(title=title, raw_text=raw_text)
+
+
+def reclassify_all(force: bool = True) -> int:
+    count = 0
+    with connect() as conn:
+        if force:
+            rows = conn.execute(
+                "SELECT id, import_title, raw_text FROM competitions"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id, import_title, raw_text
+                FROM competitions
+                WHERE local_classifier_version IS NULL
+                   OR local_classifier_version < ?
+                """,
+                (CLASSIFIER_VERSION,),
+            ).fetchall()
+
+        for row in rows:
+            c = _classification(row["import_title"] or "", row["raw_text"] or "")
+            conn.execute(
+                """
+                UPDATE competitions
+                SET local_kind = ?,
+                    local_score = ?,
+                    local_reason = ?,
+                    local_is_opportunity = ?,
+                    local_classifier_version = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (
+                    c["local_kind"],
+                    c["local_score"],
+                    c["local_reason"],
+                    c["local_is_opportunity"],
+                    c["local_classifier_version"],
+                    row["id"],
+                ),
+            )
+            count += 1
+    return count
 
 
 def insert_imported(rows: Iterable[dict[str, Any]]) -> int:
@@ -82,14 +158,28 @@ def insert_imported(rows: Iterable[dict[str, Any]]) -> int:
                 if exists:
                     continue
 
+            c = _classification(title, raw_text)
             conn.execute(
                 """
                 INSERT INTO competitions
                     (import_title, raw_text, instagram_url, imported_official_url,
-                     competition_name, official_url)
-                VALUES (?, ?, ?, ?, ?, ?)
+                     competition_name, official_url, local_kind, local_score,
+                     local_reason, local_is_opportunity, local_classifier_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (title, raw_text, instagram_url, official_url, title or None, official_url or None),
+                (
+                    title,
+                    raw_text,
+                    instagram_url,
+                    official_url,
+                    title or None,
+                    official_url or None,
+                    c["local_kind"],
+                    c["local_score"],
+                    c["local_reason"],
+                    c["local_is_opportunity"],
+                    c["local_classifier_version"],
+                ),
             )
             count += 1
     return count
@@ -101,14 +191,31 @@ def get_competition(comp_id: int) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-def list_competitions(q: str = "", category: str = "", verified: str = "", status: str = "") -> list[dict[str, Any]]:
+def list_competitions(
+    q: str = "",
+    category: str = "",
+    verified: str = "",
+    status: str = "",
+    view: str = "opportunities",
+) -> list[dict[str, Any]]:
     sql = "SELECT * FROM competitions WHERE 1=1"
     params: list[Any] = []
 
+    if view == "opportunities":
+        sql += " AND local_is_opportunity = 1"
+    elif view == "review":
+        sql += " AND local_kind = 'needs_review'"
+    elif view == "other":
+        sql += " AND local_is_opportunity = 0 AND COALESCE(local_kind, '') != 'needs_review'"
+    elif view == "all":
+        pass
+    else:
+        sql += " AND local_is_opportunity = 1"
+
     if q:
-        sql += " AND (competition_name LIKE ? OR organizer LIKE ? OR raw_text LIKE ? OR prize LIKE ?)"
+        sql += " AND (competition_name LIKE ? OR organizer LIKE ? OR raw_text LIKE ? OR prize LIKE ? OR local_reason LIKE ?)"
         like = f"%{q}%"
-        params.extend([like, like, like, like])
+        params.extend([like, like, like, like, like])
     if category:
         sql += " AND category = ?"
         params.append(category)
@@ -119,7 +226,7 @@ def list_competitions(q: str = "", category: str = "", verified: str = "", statu
         sql += " AND status = ?"
         params.append(status)
 
-    sql += " ORDER BY CASE WHEN deadline IS NULL OR deadline = '' THEN 1 ELSE 0 END, deadline ASC, id DESC"
+    sql += " ORDER BY local_score DESC, CASE WHEN deadline IS NULL OR deadline = '' THEN 1 ELSE 0 END, deadline ASC, id DESC"
     with connect() as conn:
         rows = conn.execute(sql, params).fetchall()
 
@@ -186,7 +293,20 @@ def delete_competition(comp_id: int) -> None:
 def stats() -> dict[str, int]:
     with connect() as conn:
         total = conn.execute("SELECT COUNT(*) FROM competitions").fetchone()[0]
+        opportunities = conn.execute(
+            "SELECT COUNT(*) FROM competitions WHERE local_is_opportunity = 1"
+        ).fetchone()[0]
+        review = conn.execute(
+            "SELECT COUNT(*) FROM competitions WHERE local_kind = 'needs_review'"
+        ).fetchone()[0]
+        other = conn.execute(
+            "SELECT COUNT(*) FROM competitions WHERE local_is_opportunity = 0 AND COALESCE(local_kind, '') != 'needs_review'"
+        ).fetchone()[0]
         verified = conn.execute("SELECT COUNT(*) FROM competitions WHERE verified = 1").fetchone()[0]
-        unreviewed = conn.execute("SELECT COUNT(*) FROM competitions WHERE status = 'unreviewed'").fetchone()[0]
-        open_count = conn.execute("SELECT COUNT(*) FROM competitions WHERE status IN ('open','upcoming')").fetchone()[0]
-    return {"total": total, "verified": verified, "unreviewed": unreviewed, "open": open_count}
+    return {
+        "total": total,
+        "opportunities": opportunities,
+        "review": review,
+        "other": other,
+        "verified": verified,
+    }
