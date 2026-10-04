@@ -257,7 +257,9 @@ def _numbered_lines(text: str, source_timestamp: int | None, out: list[dict[str,
         # "Name: explanation"
         if ":" in body:
             head = body.split(":", 1)[0].strip()
-            if 1 <= len(head.split()) <= 10:
+            # Date-first list rows (for example "Oct 2: Contest Name") were
+            # already handled above; do not accidentally create an "Oct 2" item.
+            if not DATE_ANY_RE.fullmatch(head) and 1 <= len(head.split()) <= 10:
                 _add_candidate(out, seen, head, line, source_timestamp)
 
         # Suffix/special names within action-oriented list lines.
