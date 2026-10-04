@@ -61,17 +61,17 @@ def _instagram_href_from_map(record: dict[str, Any]) -> str:
     """
     Extract the actual saved-post URL from Instagram export string_map_data.
 
-    We intentionally ONLY trust the 'Saved on' entry. Other metadata keys such as
-    Owner, Hashtags, Brand partner, etc. may also contain Instagram URLs, but those
-    are not saved posts.
+    Meta has changed the label used for the saved-media URL across export
+    versions/locales, so we do NOT require a particular key such as "Saved on".
+    Instead, inspect every metadata entry and accept only URLs that are clearly
+    Instagram posts/reels. Profile, hashtag, owner and brand-partner URLs are
+    rejected by _is_instagram_post_url().
     """
     smd = record.get("string_map_data")
     if not isinstance(smd, dict):
         return ""
 
-    for key, value in smd.items():
-        if str(key).strip().lower() != "saved on":
-            continue
+    for value in smd.values():
         if isinstance(value, dict):
             href = str(value.get("href") or "").strip()
             if _is_instagram_post_url(href):
