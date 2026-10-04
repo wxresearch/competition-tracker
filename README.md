@@ -6,9 +6,11 @@ It is designed for competitions, essay contests, olympiads, scholarships, resear
 
 ## What it does
 
-- Imports your own **CSV or JSON** file.
+- Imports your own **CSV or JSON** file, including the current Meta/Instagram `saved_posts.json` format.
 - Keeps the original Instagram link and imported caption/notes.
-- Uses AI to extract:
+- Runs a **free local classifier** first to separate likely competitions, scholarships, awards, programs, and internships from college advice/resources.
+- Keeps borderline posts in a **Needs review** view instead of discarding them.
+- Uses AI only when you choose to extract:
   - competition name
   - organizer
   - category
@@ -112,11 +114,14 @@ A plain JSON array using the same field names also works.
 
 ## Recommended workflow
 
-1. Export or manually compile your saved competition posts into CSV/JSON.
-2. Import them.
-3. Click **Extract** to cheaply structure the information already in the post/caption.
-4. For promising competitions, click **Verify online**.
-5. The verifier searches the live web, prioritizes official sources, and tries to determine the current or next cycle rather than blindly trusting an old Instagram post.
+1. Export your Instagram saved posts or compile them manually into CSV/JSON.
+2. Import them. Local classification runs automatically and does **not** use API credits.
+3. Start in **Likely opportunities**. Check **Needs review** for borderline posts; ordinary advice/resources live under **Other saves**.
+4. Click **AI extract** only on opportunities where you want structured deadline/fee/prize/eligibility fields.
+5. Click **Verify online** only for opportunities you seriously care about.
+6. The verifier searches the live web, prioritizes official sources, and tries to determine the current or next cycle rather than blindly trusting an old Instagram post.
+
+You can click **Re-run free local filter** whenever the built-in classification rules are updated. Existing database rows are also migrated and classified automatically when the app starts.
 
 This separation is intentional: verifying every saved item can cost more than extracting it, and many saved posts may already be expired or irrelevant.
 
