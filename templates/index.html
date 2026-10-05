@@ -24,16 +24,16 @@
 
     {% if message %}<div class="notice success">{{ message }}</div>{% endif %}
     {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
-    {% if not has_gemini_key or not has_tavily_key %}
+    {% if not has_gemini_key %}
       <div class="notice warn">
-        <strong>Free verification setup:</strong>
-        {% if not has_gemini_key %} add <code>GEMINI_API_KEY</code>{% endif %}
-        {% if not has_gemini_key and not has_tavily_key %} and{% endif %}
-        {% if not has_tavily_key %} add <code>TAVILY_API_KEY</code>{% endif %}
-        to <code>.env</code>. Local import/splitting works either way.
+        <strong>Free verification setup:</strong> add <code>GEMINI_API_KEY</code> to <code>.env</code>.
+        Tavily can run in keyless mode, so <code>TAVILY_API_KEY</code> is optional.
       </div>
     {% else %}
-      <div class="notice success"><strong>Free verification ready.</strong> Gemini + Tavily are configured.</div>
+      <div class="notice success">
+        <strong>Free verification ready.</strong>
+        Gemini is configured; Tavily will use {% if has_tavily_key %}your API key{% else %}keyless mode{% endif %}.
+      </div>
     {% endif %}
 
     <section class="panel import-panel">
