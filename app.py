@@ -5,7 +5,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -27,14 +27,32 @@ def startup() -> None:
     db.init_db()
 
 
-def go(message: str = "", error: str = "") -> RedirectResponse:
+def go(message: str = "", error: str = "", view: str = "") -> RedirectResponse:
     query = []
+    if view:
+        query.append(f"view={quote(view)}")
     if message:
         query.append(f"message={quote(message)}")
     if error:
         query.append(f"error={quote(error)}")
     suffix = "?" + "&".join(query) if query else ""
     return RedirectResponse(url="/" + suffix, status_code=303)
+
+
+def _run_verification_job(comp_id: int, job_id: int) -> None:
+    db.set_verification_job(job_id, "running")
+    try:
+        record = db.get_competition(comp_id)
+        if not record:
+            raise RuntimeError("Opportunity not found.")
+        result, sources = verify_competition(record)
+        values = result.model_dump()
+        values["ai_confidence"] = values.pop("confidence")
+        values["verification_notes"] = values.pop("notes")
+        db.update_verification(comp_id, values, sources)
+        db.set_verification_job(job_id, "done")
+    except Exception as exc:
+        db.set_verification_job(job_id, "error", str(exc)[:1000])
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -48,11 +66,18 @@ def home(
     message: str = "",
     error: str = "",
 ):
+    competitions = db.list_competitions(
+        q=q,
+        category=category,
+        verified=verified,
+        status=status,
+        view=view,
+    )
     return templates.TemplateResponse(
         request=request,
         name="index.html",
         context={
-            "competitions": db.list_competitions(q=q, category=category, verified=verified, status=status, view=view),
+            "competitions": competitions,
             "categories": db.categories(),
             "stats": db.stats(),
             "q": q,
@@ -67,6 +92,8 @@ def home(
             "has_groq_key": bool(os.getenv("GROQ_API_KEY")),
             "ai_extract_ready": bool(os.getenv("GEMINI_API_KEY") or os.getenv("GROQ_API_KEY")),
             "free_verify_ready": True,
+            "has_active_jobs": any(c.get("verification_job_status") for c in competitions),
+            "cache_days": db.VERIFICATION_CACHE_DAYS,
         },
     )
 
@@ -80,9 +107,90 @@ async def import_file(file: UploadFile = File(...)):
         return go(
             message=(
                 f"Import complete: {result['new']} new source posts, "
-                f"{result['refreshed']} refreshed, and {result['children']} named opportunities extracted locally."
+                f"{result['refreshed']} refreshed, {result['children']} opportunity links processed, "
+                f"and {result.get('merged', 0)} duplicate cycles merged."
             )
         )
+    except Exception as exc:
+        return go(error=str(exc))
+
+
+@app.get("/competitions/{comp_id}/edit", response_class=HTMLResponse)
+def edit_page(request: Request, comp_id: int):
+    record = db.get_competition(comp_id)
+    if not record:
+        return go(error="Opportunity not found.")
+    return templates.TemplateResponse(
+        request=request,
+        name="edit.html",
+        context={
+            "c": record,
+            "merge_candidates": db.find_merge_candidates(comp_id),
+        },
+    )
+
+
+@app.post("/competitions/{comp_id}/edit")
+def edit_save(
+    comp_id: int,
+    competition_name: str = Form(default=""),
+    organizer: str = Form(default=""),
+    category: str = Form(default=""),
+    deadline: str = Form(default=""),
+    deadline_text: str = Form(default=""),
+    entry_fee: str = Form(default=""),
+    prize: str = Form(default=""),
+    eligibility: str = Form(default=""),
+    requirements: str = Form(default=""),
+    official_url: str = Form(default=""),
+    status: str = Form(default="unreviewed"),
+    cycle_year: str = Form(default=""),
+    cycle_label: str = Form(default=""),
+):
+    try:
+        year = int(cycle_year) if cycle_year.strip() else None
+        db.update_manual(
+            comp_id,
+            {
+                "competition_name": competition_name,
+                "organizer": organizer,
+                "category": category,
+                "deadline": deadline,
+                "deadline_text": deadline_text,
+                "entry_fee": entry_fee,
+                "prize": prize,
+                "eligibility": eligibility,
+                "requirements": requirements,
+                "official_url": official_url,
+                "status": status,
+                "cycle_year": year,
+                "cycle_label": cycle_label,
+            },
+        )
+        return go(message="Saved manual corrections.", view="opportunities")
+    except Exception as exc:
+        return go(error=str(exc), view="opportunities")
+
+
+@app.post("/competitions/{comp_id}/review-state")
+def review_state(comp_id: int, state: str = Form(...)):
+    try:
+        db.set_review_state(comp_id, state)
+        labels = {
+            "active": "Returned to Actual opportunities.",
+            "needs_review": "Moved to Needs review.",
+            "irrelevant": "Marked irrelevant.",
+        }
+        return go(message=labels.get(state, "Updated review state."))
+    except Exception as exc:
+        return go(error=str(exc))
+
+
+@app.post("/competitions/{target_id}/merge")
+def merge(target_id: int, duplicate_id: int = Form(...)):
+    try:
+        db.merge_competitions(target_id, duplicate_id)
+        return go(message="Merged duplicate opportunity and preserved its source links.")
     except Exception as exc:
         return go(error=str(exc))
 
@@ -93,12 +201,16 @@ def extract(comp_id: int):
     if not record:
         return go(error="Opportunity not found.")
     if record.get("record_origin") != "split_child":
-        return go(error="This is a source post, not an individual opportunity. Open its extracted items instead.")
+        return go(error="This is a source post, not an individual opportunity.")
     try:
         result = extract_competition(record)
         if not result.is_competition:
-            db.update_extraction(comp_id, {"status": "not_competition", "ai_confidence": result.confidence})
-            return go(message="AI marked that record as not a competition.")
+            db.set_review_state(comp_id, "irrelevant")
+            db.update_extraction(
+                comp_id,
+                {"status": "not_competition", "ai_confidence": result.confidence},
+            )
+            return go(message="AI marked that record as not an opportunity.")
         values = result.model_dump(exclude={"is_competition"})
         values["ai_confidence"] = values.pop("confidence")
         if not values.get("official_url"):
@@ -106,55 +218,43 @@ def extract(comp_id: int):
         if record.get("status") == "unreviewed":
             values["status"] = "extracted"
         db.update_extraction(comp_id, values)
-        return go(message="Extracted competition details.")
+        return go(message="Extracted opportunity details.")
     except Exception as exc:
-        message = str(exc)
-        lower = message.lower()
-        if "all configured free ai providers" in lower:
-            return go(error="All configured free AI providers are temporarily unavailable or rate-limited. Add GROQ_API_KEY for a second-provider fallback, or try again later.")
-        if "groq_api_key is not configured" in lower and not os.getenv("GEMINI_API_KEY"):
-            return go(error="No free AI provider is configured. Add GEMINI_API_KEY or GROQ_API_KEY to your .env file.")
-        if "503" in message or "unavailable" in lower or "high demand" in lower:
-            return go(error="The current free AI provider is temporarily unavailable. Configure GROQ_API_KEY for provider failover, or try again later.")
-        if "429" in message or "quota" in lower or "rate limit" in lower:
-            return go(error="The free AI service hit a temporary quota/rate limit. Try again later; your local data is safe.")
-        return go(error=message)
+        return go(error=str(exc))
 
 
 @app.post("/competitions/{comp_id}/verify")
-def verify(comp_id: int):
+def verify(
+    comp_id: int,
+    background_tasks: BackgroundTasks,
+    force: int = Form(default=0),
+):
     record = db.get_competition(comp_id)
     if not record:
         return go(error="Opportunity not found.")
     if record.get("record_origin") != "split_child":
-        return go(error="Verify individual extracted opportunities, not the source-list post.")
-    try:
-        result, sources = verify_competition(record)
-        values = result.model_dump()
-        values["ai_confidence"] = values.pop("confidence")
-        values["verification_notes"] = values.pop("notes")
-        db.update_verification(comp_id, values, sources)
-        return go(message="Verified against current web sources.")
-    except Exception as exc:
-        message = str(exc)
-        lower = message.lower()
-        if "all configured free ai providers" in lower:
-            return go(error="All configured free AI providers are temporarily unavailable or rate-limited. Add GROQ_API_KEY for a second-provider fallback, or try again later.")
-        if "groq_api_key is not configured" in lower and not os.getenv("GEMINI_API_KEY"):
-            return go(error="No free AI provider is configured. Add GEMINI_API_KEY or GROQ_API_KEY to your .env file.")
-        if "does not look like a tavily api key" in lower:
-            return go(error="Your Tavily key looks invalid. Tavily keys begin with 'tvly-'. You can fix/remove TAVILY_API_KEY; keyless verification is also supported.")
-        if "503" in message or "unavailable" in lower or "high demand" in lower:
-            return go(error="The configured free AI providers are temporarily unavailable. Add GROQ_API_KEY for cross-provider failover, or try again later.")
-        if "429" in message or "quota" in lower or "rate limit" in lower or "credits" in lower:
-            return go(error="The free verification service hit its current usage limit. Try again after the service resets, or check your Gemini/Tavily free-tier usage.")
-        return go(error=message)
+        return go(error="Verify individual opportunities, not source-list posts.")
+
+    if not force and db.verification_is_fresh(comp_id):
+        return go(
+            message=(
+                f"Using cached verification from the last {db.VERIFICATION_CACHE_DAYS} days. "
+                "Use Refresh verification if you want to search again."
+            )
+        )
+
+    job_id = db.create_verification_job(comp_id)
+    background_tasks.add_task(_run_verification_job, comp_id, job_id)
+    return go(message="Verification queued. The page will refresh automatically when it finishes.")
 
 
 @app.post("/extract-next")
 def extract_next(batch_size: int = Form(default=10)):
     batch_size = max(1, min(batch_size, 25))
-    records = [r for r in db.list_competitions(status="unreviewed", view="opportunities")][:batch_size]
+    records = [
+        r
+        for r in db.list_competitions(status="unreviewed", view="opportunities")
+    ][:batch_size]
     done = 0
     errors = 0
     for record in records:
@@ -177,8 +277,9 @@ def reclassify():
     result = db.analyze_all_source_posts(force=True)
     return go(
         message=(
-            f"Rebuilt local analysis for {result['analyzed']} source posts and "
-            f"extracted {result['children']} named opportunities. No API credits were used."
+            f"Rebuilt {result['analyzed']} source posts, processed "
+            f"{result['children']} opportunity links, and merged "
+            f"{result.get('merged', 0)} duplicate cycles."
         )
     )
 
