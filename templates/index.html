@@ -86,6 +86,11 @@
     </form>
 
     <div class="batch-tools">
+      {% if view == 'opportunities' %}
+      <form action="/verify-all" method="post" onsubmit="return confirm('Verify every active opportunity that is not still cached? This may use many Tavily requests.')">
+        <button type="submit">Verify all</button>
+      </form>
+      {% endif %}
       <form action="/reclassify" method="post">
         <button type="submit" class="secondary">Rebuild local extraction</button>
       </form>
