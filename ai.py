@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import date
+import re
+from datetime import date, datetime
 from typing import Any
 from urllib.parse import urlparse
 
@@ -249,19 +250,25 @@ def _search_query(record: dict[str, Any]) -> str:
     return " ".join(parts)
 
 
-def _tavily_search(record: dict[str, Any]) -> list[dict[str, Any]]:
+def _tavily_search_data(
+    record: dict[str, Any],
+    include_answer: bool | str = False,
+) -> dict[str, Any]:
     payload = {
         "query": _search_query(record),
         "topic": "general",
         "search_depth": "advanced",
         "max_results": 8,
-        "include_answer": False,
+        "include_answer": include_answer,
         "include_raw_content": False,
     }
 
     response = _tavily_post(TAVILY_SEARCH_URL, payload, timeout=35.0)
-    data = response.json()
+    return response.json()
 
+
+def _tavily_search(record: dict[str, Any]) -> list[dict[str, Any]]:
+    data = _tavily_search_data(record, include_answer=False)
     results = data.get("results") or []
     return [r for r in results if isinstance(r, dict) and r.get("url")]
 
@@ -406,6 +413,136 @@ def _validated_official_url(
     return None
 
 
+def _sentence_with(text: str, terms: tuple[str, ...]) -> str | None:
+    for sentence in re.split(r"(?<=[.!?])\\s+|\\n+", text or ""):
+        low = sentence.lower()
+        if any(term in low for term in terms):
+            cleaned = sentence.strip()
+            if cleaned:
+                return cleaned
+    return None
+
+
+def _fallback_deadline(text: str) -> tuple[str | None, str | None]:
+    iso = re.search(r"\\b(20\\d{2}-\\d{2}-\\d{2})\\b", text or "")
+    if iso:
+        return iso.group(1), iso.group(1)
+
+    month_re = re.compile(
+        r"(?i)\\b("
+        r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+        r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|"
+        r"Nov(?:ember)?|Dec(?:ember)?"
+        r")\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(20\\d{2}))?\\b"
+    )
+    match = month_re.search(text or "")
+    if not match:
+        return None, None
+
+    deadline_text = match.group(0)
+    if not match.group(3):
+        return None, deadline_text
+
+    try:
+        parsed = datetime.strptime(
+            f"{match.group(1)[:3]} {match.group(2)} {match.group(3)}",
+            "%b %d %Y",
+        )
+        return parsed.date().isoformat(), deadline_text
+    except ValueError:
+        return None, deadline_text
+
+
+def _tavily_only_verification(
+    record: dict[str, Any],
+    provider_error: Exception | None = None,
+) -> tuple[CompetitionVerification, list[dict[str, str]]]:
+    """
+    Last-resort verifier that needs no Gemini/Groq key.
+
+    Tavily can synthesize an answer directly from live search results. We keep
+    this deliberately conservative: only obvious fields are copied, confidence
+    stays low, and the result is explicitly labeled source-only.
+    """
+    data = _tavily_search_data(record, include_answer="advanced")
+    raw_results = [
+        r for r in (data.get("results") or [])
+        if isinstance(r, dict) and r.get("url")
+    ]
+    ranked = _best_search_results(raw_results, record)
+    if not ranked:
+        raise RuntimeError("Tavily source-only verification found no usable web results.")
+
+    answer = str(data.get("answer") or "").strip()
+    if not answer:
+        answer = " ".join(
+            str(r.get("content") or "") for r in ranked[:4]
+        ).strip()
+
+    sources = [
+        {
+            "title": str(r.get("title") or r.get("url")),
+            "url": str(r.get("url")),
+        }
+        for r in ranked[:6]
+    ]
+
+    deadline, deadline_text = _fallback_deadline(answer)
+    lower = answer.lower()
+
+    status = "unclear"
+    if any(term in lower for term in ("currently open", "applications are open", "open now", "registration is open")):
+        status = "open"
+    elif any(term in lower for term in ("is closed", "applications are closed", "deadline has passed", "submissions are closed")):
+        status = "closed"
+    elif any(term in lower for term in ("opens on", "will open", "upcoming cycle", "not yet open")):
+        status = "upcoming"
+
+    fee = _sentence_with(
+        answer,
+        ("entry fee", "application fee", "free to enter", "free to apply", "no fee"),
+    )
+    prize = _sentence_with(
+        answer,
+        ("prize", "cash award", "cash prize", "winner receives", "winners receive"),
+    )
+    eligibility = _sentence_with(
+        answer,
+        ("eligib", "open to students", "open to high school", "applicants must"),
+    )
+    requirements = _sentence_with(
+        answer,
+        ("submit ", "submission", "word count", "essay must", "video must", "application requires"),
+    )
+
+    note_bits = [
+        "Source-only Tavily verification was used because the configured AI providers were unavailable or rate-limited.",
+        "Treat extracted fields as lower-confidence until an official page is manually reviewed.",
+    ]
+    if answer:
+        note_bits.append(f"Tavily answer: {answer[:1600]}")
+    if provider_error:
+        note_bits.append("AI provider fallback was attempted first.")
+
+    best_url = sources[0]["url"] if sources else None
+    result = CompetitionVerification(
+        competition_name=record.get("competition_name") or record.get("import_title"),
+        organizer=record.get("organizer"),
+        category=record.get("category") or record.get("local_kind"),
+        deadline=deadline,
+        deadline_text=deadline_text,
+        entry_fee=fee,
+        prize=prize,
+        eligibility=eligibility,
+        requirements=requirements,
+        official_url=best_url,
+        status=status,
+        notes=" ".join(note_bits),
+        confidence=0.45,
+    )
+    return result, sources
+
+
 def verify_competition(
     record: dict[str, Any],
 ) -> tuple[CompetitionVerification, list[dict[str, str]]]:
@@ -449,7 +586,10 @@ LIVE WEB SOURCES:
 {web_context}
 """
 
-    parsed = _gemini_structured(prompt, CompetitionVerification)
+    try:
+        parsed = _gemini_structured(prompt, CompetitionVerification)
+    except Exception as provider_error:
+        return _tavily_only_verification(record, provider_error=provider_error)
 
     # Only expose URLs that were actually retrieved by Tavily. Put the model's
     # selected official URL first when it matches one of the fetched sources.
