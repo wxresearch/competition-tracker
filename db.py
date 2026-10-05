@@ -939,13 +939,11 @@ def list_competitions(
             " AND ((record_origin = 'source_post' AND split_status = 'unresolved_single')"
             " OR (record_origin = 'split_child' AND review_state = 'needs_review'))"
         )
-    elif view == "other":
-        sql += (
-            " AND ((record_origin = 'source_post' AND split_status = 'not_opportunity')"
-            " OR (record_origin = 'split_child' AND review_state = 'irrelevant'))"
-        )
     elif view == "all":
-        sql += " AND review_state != 'merged'"
+        sql += (
+            " AND review_state NOT IN ('merged','irrelevant')"
+            " AND NOT (record_origin = 'source_post' AND split_status = 'not_opportunity')"
+        )
     else:
         sql += " AND record_origin = 'split_child' AND review_state='active' AND COALESCE(merged_into_id,0)=0"
 
