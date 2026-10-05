@@ -414,7 +414,7 @@ def _validated_official_url(
 
 
 def _sentence_with(text: str, terms: tuple[str, ...]) -> str | None:
-    for sentence in re.split(r"(?<=[.!?])\\s+|\\n+", text or ""):
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", text or ""):
         low = sentence.lower()
         if any(term in low for term in terms):
             cleaned = sentence.strip()
@@ -424,16 +424,16 @@ def _sentence_with(text: str, terms: tuple[str, ...]) -> str | None:
 
 
 def _fallback_deadline(text: str) -> tuple[str | None, str | None]:
-    iso = re.search(r"\\b(20\\d{2}-\\d{2}-\\d{2})\\b", text or "")
+    iso = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", text or "")
     if iso:
         return iso.group(1), iso.group(1)
 
     month_re = re.compile(
-        r"(?i)\\b("
+        r"(?i)\b("
         r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
         r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|"
         r"Nov(?:ember)?|Dec(?:ember)?"
-        r")\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(20\\d{2}))?\\b"
+        r")\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(20\d{2}))?\b"
     )
     match = month_re.search(text or "")
     if not match:
