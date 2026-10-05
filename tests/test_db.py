@@ -149,7 +149,7 @@ def test_verification_job_lifecycle(monkeypatch, tmp_path):
     assert row["finished_at"] is not None
 
 
-def test_unknown_cycle_duplicates_are_flagged_not_auto_merged(monkeypatch, tmp_path):
+def test_same_source_year_unknown_cycle_duplicates_merge(monkeypatch, tmp_path):
     setup_db(monkeypatch, tmp_path)
     ts = int(datetime(2026, 9, 20, tzinfo=timezone.utc).timestamp())
 
@@ -162,7 +162,7 @@ def test_unknown_cycle_duplicates_are_flagged_not_auto_merged(monkeypatch, tmp_p
             ),
             source_row(
                 "https://www.instagram.com/p/unknown2/",
-                "Conrad Challenge",
+                "the Conrad Challenge",
                 ts,
             ),
         ]
@@ -171,7 +171,37 @@ def test_unknown_cycle_duplicates_are_flagged_not_auto_merged(monkeypatch, tmp_p
     items = [
         item
         for item in db.list_competitions(view="opportunities")
-        if item["competition_name"] == "Conrad Challenge"
+        if item["opportunity_key"] == "conradchallenge"
+    ]
+    assert len(items) == 1
+    assert items[0]["source_count"] == 2
+    assert items[0]["cycle_year"] is None
+
+
+def test_unknown_cycles_from_different_source_years_stay_separate(monkeypatch, tmp_path):
+    setup_db(monkeypatch, tmp_path)
+    ts_2025 = int(datetime(2025, 9, 20, tzinfo=timezone.utc).timestamp())
+    ts_2026 = int(datetime(2026, 9, 20, tzinfo=timezone.utc).timestamp())
+
+    db.insert_imported(
+        [
+            source_row(
+                "https://www.instagram.com/p/unknown1/",
+                "Conrad Challenge",
+                ts_2025,
+            ),
+            source_row(
+                "https://www.instagram.com/p/unknown2/",
+                "Conrad Challenge",
+                ts_2026,
+            ),
+        ]
+    )
+
+    items = [
+        item
+        for item in db.list_competitions(view="opportunities")
+        if item["opportunity_key"] == "conradchallenge"
     ]
     assert len(items) == 2
     assert all(item["cycle_year"] is None for item in items)
