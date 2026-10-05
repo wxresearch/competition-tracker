@@ -524,7 +524,10 @@ def _tavily_only_verification(
     if provider_error:
         note_bits.append("AI provider fallback was attempted first.")
 
-    best_url = sources[0]["url"] if sources else None
+    best_url = None
+    if ranked and _source_rank(ranked[0], record)[0] < 0:
+        best_url = str(ranked[0].get("url") or "") or None
+
     result = CompetitionVerification(
         competition_name=record.get("competition_name") or record.get("import_title"),
         organizer=record.get("organizer"),
