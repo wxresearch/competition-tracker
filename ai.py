@@ -253,12 +253,14 @@ def _search_query(record: dict[str, Any]) -> str:
 def _tavily_search_data(
     record: dict[str, Any],
     include_answer: bool | str = False,
+    search_depth: str = "basic",
+    max_results: int = 5,
 ) -> dict[str, Any]:
     payload = {
         "query": _search_query(record),
         "topic": "general",
-        "search_depth": "advanced",
-        "max_results": 8,
+        "search_depth": search_depth,
+        "max_results": max_results,
         "include_answer": include_answer,
         "include_raw_content": False,
     }
@@ -464,7 +466,12 @@ def _tavily_only_verification(
     this deliberately conservative: only obvious fields are copied, confidence
     stays low, and the result is explicitly labeled source-only.
     """
-    data = _tavily_search_data(record, include_answer="advanced")
+    data = _tavily_search_data(
+        record,
+        include_answer="basic",
+        search_depth="basic",
+        max_results=5,
+    )
     raw_results = [
         r for r in (data.get("results") or [])
         if isinstance(r, dict) and r.get("url")
@@ -549,60 +556,11 @@ def _tavily_only_verification(
 def verify_competition(
     record: dict[str, Any],
 ) -> tuple[CompetitionVerification, list[dict[str, str]]]:
-    today = date.today().isoformat()
-    web_context, sources = _source_bundle(record)
+    """
+    Fast default verification path.
 
-    prompt = f"""
-Today is {today}.
-
-Verify the SINGLE opportunity below using ONLY the supplied live web results.
-Tavily retrieved these pages immediately before this prompt.
-
-Rules:
-1. Prefer the organizer's official website, official rules, official application
-   page, or official announcement.
-2. Treat blogs, social posts, directories, and aggregators only as discovery
-   sources. Do not let them override an official source.
-3. Find the CURRENT or NEXT relevant cycle. Never copy an old Instagram deadline
-   into the current cycle unless a current official source confirms it.
-4. If the annual event exists but the current/next cycle has not been announced,
-   say that in notes and leave the deadline unknown rather than guessing.
-5. If sources conflict, explain the conflict briefly and lower confidence.
-6. official_url should be the best official page among the supplied URLs.
-7. status must be one of: open, upcoming, closed, unclear.
-
-Determine when supported:
-- exact opportunity name and organizer
-- category
-- current/next deadline
-- entry fee/cost
-- prize
-- eligibility
-- key requirements
-- official URL
-- open/upcoming/closed/unclear status
-
-OPPORTUNITY RECORD:
-{_record_context(record)}
-
-LIVE WEB SOURCES:
-{web_context}
-"""
-
-    try:
-        parsed = _gemini_structured(prompt, CompetitionVerification)
-    except Exception as provider_error:
-        return _tavily_only_verification(record, provider_error=provider_error)
-
-    # Only expose URLs that were actually retrieved by Tavily. Put the model's
-    # selected official URL first when it matches one of the fetched sources.
-    validated_url = _validated_official_url(parsed.official_url, sources)
-    if parsed.official_url and not validated_url:
-        extra = " The model's proposed official URL was discarded because Tavily did not retrieve that domain."
-        parsed.notes = ((parsed.notes or "").rstrip() + extra).strip()
-    parsed.official_url = validated_url
-
-    if validated_url:
-        sources.sort(key=lambda s: 0 if s["url"] == validated_url else 1)
-
-    return parsed, sources
+    One Tavily request does the live search and synthesized answer. This avoids
+    waiting on Gemini/Groq provider retries for every click. AI providers remain
+    available for the separate "AI extract details" action.
+    """
+    return _tavily_only_verification(record)
