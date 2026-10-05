@@ -154,6 +154,11 @@
     </form>
 
     <div class="batch-tools">
+      {% if view == 'review' %}
+      <form action="/delete-unresolved-sources" method="post" onsubmit="return confirm('Delete ALL source posts labeled needs exact name? This will not delete actual opportunities you manually moved to Needs Review.')">
+        <button type="submit" class="danger">Delete all needs-exact-name</button>
+      </form>
+      {% endif %}
       {% if view == 'opportunities' %}
       <form action="/verify-all" method="post" onsubmit="return confirm('Verify every active opportunity that is not still cached? This may use many Tavily requests.')">
         <button type="submit">Verify all</button>
