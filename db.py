@@ -160,8 +160,6 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_comp_deadline ON competitions(deadline);
             CREATE INDEX IF NOT EXISTS idx_comp_category ON competitions(category);
             CREATE INDEX IF NOT EXISTS idx_comp_verified ON competitions(verified);
-            CREATE INDEX IF NOT EXISTS idx_comp_origin ON competitions(record_origin);
-            CREATE INDEX IF NOT EXISTS idx_comp_parent ON competitions(parent_id);
             CREATE INDEX IF NOT EXISTS idx_jobs_comp_status ON verification_jobs(competition_id, status);
             """
         )
@@ -201,6 +199,12 @@ def init_db() -> None:
         )
         # Indexes that depend on migrated columns must be created only after
         # _ensure_column has added those columns to older databases.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_comp_origin ON competitions(record_origin)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_comp_parent ON competitions(parent_id)"
+        )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_comp_opportunity ON competitions(opportunity_id)"
         )
