@@ -43,22 +43,20 @@ def _ensure_column(conn: sqlite3.Connection, name: str, definition: str) -> None
 
 def _canonical_key(name: str | None) -> str:
     value = (name or "").lower()
-    value = re.sub(r"\b(the|annual|international|national)\b", " ", value)
+    value = re.sub(r"\b(the|annual)\b", " ", value)
     value = re.sub(r"\b(20\d{2}(?:[-–/]\d{2,4})?)\b", " ", value)
     value = re.sub(r"[^a-z0-9]+", "", value)
     return value
 
 
 def _cycle_year(deadline: str | None, source_timestamp: int | None = None) -> int | None:
+    # Only assign a cycle year when the record itself supports it. The date a
+    # user saved an Instagram post is not reliable evidence of the competition
+    # cycle, so unknown cycles remain unknown until edited or verified.
     if deadline:
         m = re.match(r"^(20\d{2})-", deadline)
         if m:
             return int(m.group(1))
-    if source_timestamp:
-        try:
-            return datetime.fromtimestamp(int(source_timestamp), tz=timezone.utc).year
-        except (ValueError, TypeError, OSError):
-            pass
     return None
 
 
