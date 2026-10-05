@@ -5,256 +5,302 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Opportunity Tracker</title>
   <link rel="stylesheet" href="/static/style.css">
+  {% if has_active_jobs %}
+  <script>
+    setTimeout(() => window.location.reload(), 2500);
+  </script>
+  {% endif %}
 </head>
 <body>
-  <main class="shell">
-    <header class="hero">
-      <div>
-        <p class="eyebrow">PERSONAL OPPORTUNITY DATABASE</p>
-        <h1>Opportunity Tracker</h1>
-        <p class="subtitle">Instagram posts are treated as sources. The tracker locally extracts named competitions, scholarships, awards, programs, and internships into separate opportunity records.</p>
-      </div>
-      <div class="stats">
-        <div><strong>{{ stats.opportunities }}</strong><span>Actual opportunities</span></div>
-        <div><strong>{{ stats.source_lists }}</strong><span>Source posts</span></div>
-        <div><strong>{{ stats.review }}</strong><span>Needs review</span></div>
-        <div><strong>{{ stats.verified }}</strong><span>Verified</span></div>
-      </div>
-    </header>
-
-    {% if message %}<div class="notice success">{{ message }}</div>{% endif %}
-    {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
-    <div class="notice success">
-      <strong>Fast verification ready.</strong>
-      Verify Free uses one Tavily web search {% if has_tavily_key %}with your API key{% else %}in keyless mode{% endif %}; it no longer waits for Gemini/Groq.
+<main class="shell">
+  <header class="hero">
+    <div>
+      <p class="eyebrow">PERSONAL OPPORTUNITY DATABASE</p>
+      <h1>Opportunity Tracker</h1>
+      <p class="subtitle">Source posts, recurring opportunities, annual cycles, deadlines, verification, and manual corrections in one place.</p>
     </div>
-    {% if not ai_extract_ready %}
-      <div class="notice warn">
-        <strong>Optional AI detail extraction is off.</strong>
-        Add <code>GEMINI_API_KEY</code> or <code>GROQ_API_KEY</code> only if you want the separate AI extract action.
-      </div>
-    {% endif %}
+    <div class="stats">
+      <div><strong>{{ stats.opportunities }}</strong><span>Active opportunities</span></div>
+      <div><strong>{{ stats.due_week }}</strong><span>Due within 7 days</span></div>
+      <div><strong>{{ stats.review }}</strong><span>Needs review</span></div>
+      <div><strong>{{ stats.verified }}</strong><span>Web checked</span></div>
+    </div>
+  </header>
 
-    <section class="panel import-panel">
-      <div>
-        <h2>Import / refresh Instagram saves</h2>
-        <p>Re-importing the same <code>saved_posts.json</code> refreshes existing source posts instead of duplicating them, and preserves timestamps for better date parsing.</p>
-      </div>
-      <form action="/import" method="post" enctype="multipart/form-data" class="upload-form">
-        <input type="file" name="file" accept=".csv,.json" required>
-        <button type="submit">Import / refresh</button>
+  {% if message %}<div class="notice success">{{ message }}</div>{% endif %}
+  {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
+
+  <div class="notice success">
+    <strong>Fast verification ready.</strong>
+    Verification runs in the background, uses Tavily {% if has_tavily_key %}with your API key{% else %}in keyless mode{% endif %}, and is cached for {{ cache_days }} days.
+  </div>
+
+  {% if not ai_extract_ready %}
+  <div class="notice warn">
+    <strong>Optional AI detail extraction is off.</strong>
+    Add <code>GEMINI_API_KEY</code> or <code>GROQ_API_KEY</code> only if you want the separate AI extraction action.
+  </div>
+  {% endif %}
+
+  <section class="panel import-panel">
+    <div>
+      <h2>Import / refresh Instagram saves</h2>
+      <p>Re-importing the same file refreshes source posts, rebuilds parser-generated items, and merges exact duplicate cycles while preserving every source.</p>
+    </div>
+    <form action="/import" method="post" enctype="multipart/form-data" class="upload-form">
+      <input type="file" name="file" accept=".csv,.json" required>
+      <button type="submit">Import / refresh</button>
+    </form>
+  </section>
+
+  <section class="view-tabs">
+    <a href="/?view=opportunities" class="{% if view == 'opportunities' %}active{% endif %}">Actual opportunities <span>{{ stats.opportunities }}</span></a>
+    <a href="/?view=sources" class="{% if view == 'sources' %}active{% endif %}">Source posts <span>{{ stats.source_lists }}</span></a>
+    <a href="/?view=review" class="{% if view == 'review' %}active{% endif %}">Needs review <span>{{ stats.review }}</span></a>
+    <a href="/?view=other" class="{% if view == 'other' %}active{% endif %}">Other / irrelevant <span>{{ stats.other }}</span></a>
+    <a href="/?view=all" class="{% if view == 'all' %}active{% endif %}">All records</a>
+  </section>
+
+  <section class="panel controls">
+    <form method="get" action="/" class="filters">
+      <input type="hidden" name="view" value="{{ view }}">
+      <input type="search" name="q" value="{{ q }}" placeholder="Search opportunity, organizer, prize, source...">
+      <select name="category">
+        <option value="">All categories</option>
+        {% for cat in categories %}
+          <option value="{{ cat }}" {% if cat == category %}selected{% endif %}>{{ cat }}</option>
+        {% endfor %}
+      </select>
+      <select name="status">
+        <option value="">All statuses</option>
+        {% for s in ['unreviewed','extracted','open','upcoming','closed','unclear','not_competition'] %}
+          <option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ s.replace('_',' ')|title }}</option>
+        {% endfor %}
+      </select>
+      <select name="verified">
+        <option value="">Any verification</option>
+        <option value="1" {% if verified == '1' %}selected{% endif %}>Web checked</option>
+        <option value="0" {% if verified == '0' %}selected{% endif %}>Not checked</option>
+      </select>
+      <button type="submit">Filter</button>
+    </form>
+
+    <div class="batch-tools">
+      <form action="/reclassify" method="post">
+        <button type="submit" class="secondary">Rebuild local extraction</button>
       </form>
-    </section>
-
-    <section class="view-tabs">
-      <a href="/?view=opportunities" class="{% if view == 'opportunities' %}active{% endif %}">
-        Actual opportunities <span>{{ stats.opportunities }}</span>
-      </a>
-      <a href="/?view=sources" class="{% if view == 'sources' %}active{% endif %}">
-        Source posts <span>{{ stats.source_lists }}</span>
-      </a>
-      <a href="/?view=review" class="{% if view == 'review' %}active{% endif %}">
-        Needs review <span>{{ stats.review }}</span>
-      </a>
-      <a href="/?view=other" class="{% if view == 'other' %}active{% endif %}">
-        Other saves <span>{{ stats.other }}</span>
-      </a>
-      <a href="/?view=all" class="{% if view == 'all' %}active{% endif %}">
-        All records <span>{{ stats.total_sources + stats.opportunities }}</span>
-      </a>
-    </section>
-
-    <section class="panel controls">
-      <form method="get" action="/" class="filters">
-        <input type="hidden" name="view" value="{{ view }}">
-        <input type="search" name="q" value="{{ q }}" placeholder="Search opportunity name, caption, source...">
-        <select name="category">
-          <option value="">All AI categories</option>
-          {% for c in categories %}
-            <option value="{{ c }}" {% if c == category %}selected{% endif %}>{{ c }}</option>
-          {% endfor %}
-        </select>
-        <select name="status">
-          <option value="">All AI statuses</option>
-          {% for s in ['unreviewed','extracted','open','upcoming','closed','unclear','not_competition'] %}
-            <option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ s.replace('_',' ')|title }}</option>
-          {% endfor %}
-        </select>
-        <select name="verified">
-          <option value="">Any verification</option>
-          <option value="1" {% if verified == '1' %}selected{% endif %}>Verified</option>
-          <option value="0" {% if verified == '0' %}selected{% endif %}>Not verified</option>
-        </select>
-        <button type="submit">Filter</button>
+      {% if view == 'opportunities' and ai_extract_ready %}
+      <form action="/extract-next" method="post" class="batch-form">
+        <label>AI extract next</label>
+        <input type="number" name="batch_size" min="1" max="25" value="5">
+        <button type="submit">Run</button>
       </form>
-
-      <div class="batch-tools">
-        <form action="/reclassify" method="post">
-          <button type="submit" class="secondary">Rebuild local extraction</button>
-        </form>
-        {% if view == 'opportunities' and ai_extract_ready %}
-        <form action="/extract-next" method="post" class="batch-form">
-          <label>Free AI extract next</label>
-          <input type="number" name="batch_size" min="1" max="25" value="5">
-          <button type="submit">Run</button>
-        </form>
-        {% endif %}
-      </div>
-    </section>
-
-    <p class="view-note">
-      {% if view == 'opportunities' %}
-        Only individually named opportunities extracted from captions appear here. A roundup post itself is never treated as the competition.
-      {% elif view == 'sources' %}
-        These are Instagram source posts and roundups. When the caption contains identifiable names, the extracted items appear separately under Actual opportunities.
-      {% elif view == 'review' %}
-        These look relevant, but the caption does not contain a sufficiently clear individual opportunity name. The missing names may be visible only in the carousel/reel itself.
-      {% elif view == 'other' %}
-        These look like college advice, study resources, tutorials, or unrelated saves.
-      {% else %}
-        Showing both imported source posts and locally extracted opportunity records.
       {% endif %}
-    </p>
+    </div>
+  </section>
 
-    <section class="cards">
-      {% for c in competitions %}
-      <article class="card {% if c.record_origin == 'source_post' %}source-card{% endif %}">
-        <div class="card-top">
-          <div>
-            <div class="badges">
-              {% if c.record_origin == 'split_child' %}
-                <span class="badge actual">actual opportunity</span>
-                <span class="badge kind-{{ c.local_kind }}">{{ (c.local_kind or 'opportunity').replace('_',' ') }}</span>
-              {% else %}
-                {% if c.split_status == 'list_unresolved' %}
-                  <span class="badge source unresolved">source list · names not in caption</span>
-                {% elif c.split_count %}
-                  <span class="badge source">source post · {{ c.split_count }} item{% if c.split_count != 1 %}s{% endif %} extracted</span>
-                {% elif c.split_status == 'unresolved_single' %}
-                  <span class="badge unresolved">needs exact name</span>
-                {% else %}
-                  <span class="badge muted">{{ (c.local_kind or 'other').replace('_',' ') }}</span>
-                {% endif %}
-              {% endif %}
-              {% if c.status != 'unreviewed' %}<span class="badge status-{{ c.status }}">{{ c.status.replace('_',' ') }}</span>{% endif %}
-              {% if c.verified %}<span class="badge verified">verified</span>{% endif %}
-              {% if c.category %}<span class="badge">{{ c.category }}</span>{% endif %}
-            </div>
+  <p class="view-note">
+    {% if view == 'opportunities' %}
+      Sorted by urgency: due within 7 days first, then this month, later deadlines, expired items, and finally unknown deadlines.
+    {% elif view == 'sources' %}
+      Original Instagram posts. One source can feed several opportunities, and one opportunity can keep several source posts.
+    {% elif view == 'review' %}
+      Parser-generated items you moved here or source posts that still need an exact opportunity name.
+    {% elif view == 'other' %}
+      Advice/resources plus opportunities you manually marked irrelevant.
+    {% else %}
+      All non-merged records.
+    {% endif %}
+  </p>
 
-            <h3>
-              {% if c.record_origin == 'split_child' %}
-                {{ c.competition_name or c.import_title or 'Unnamed opportunity' }}
-              {% else %}
-                {{ c.import_title or c.owner_name or 'Instagram source post' }}
-              {% endif %}
-            </h3>
-
+  <section class="cards">
+    {% for c in competitions %}
+    <article class="card {% if c.record_origin == 'source_post' %}source-card{% endif %} {% if c.urgency_bucket == 'week' or c.urgency_bucket == 'today' %}urgent-card{% endif %}">
+      <div class="card-top">
+        <div>
+          <div class="badges">
             {% if c.record_origin == 'split_child' %}
-              <p class="organizer">
-                Source:
-                {% if c.owner_name %}{{ c.owner_name }}{% elif c.owner_username %}@{{ c.owner_username }}{% else %}Instagram post{% endif %}
-                {% if c.owner_username and c.owner_name %} (@{{ c.owner_username }}){% endif %}
-              </p>
-            {% elif c.owner_username %}
-              <p class="organizer">@{{ c.owner_username }}</p>
+              <span class="badge actual">actual opportunity</span>
+              {% if c.cycle_label %}<span class="badge cycle">cycle {{ c.cycle_label }}</span>{% endif %}
+              <span class="badge kind-{{ c.local_kind }}">{{ (c.local_kind or 'opportunity').replace('_',' ') }}</span>
+
+              {% if c.verification_level == 'official' %}
+                <span class="badge verification-official">✓ official source confirmed</span>
+              {% elif c.verification_level == 'web' %}
+                <span class="badge verification-web">◐ web sources found</span>
+              {% elif c.verification_level == 'conflicting' %}
+                <span class="badge verification-conflict">⚠ conflicting information</span>
+              {% elif c.verification_level == 'unclear' %}
+                <span class="badge unresolved">? verification unclear</span>
+              {% endif %}
+
+              {% if c.urgency_bucket == 'today' %}
+                <span class="badge urgency-now">due today</span>
+              {% elif c.urgency_bucket == 'week' %}
+                <span class="badge urgency-now">{{ c.urgency_text }}</span>
+              {% elif c.urgency_bucket == 'month' %}
+                <span class="badge urgency-soon">{{ c.urgency_text }}</span>
+              {% elif c.urgency_bucket == 'expired' %}
+                <span class="badge urgency-expired">{{ c.urgency_text }}</span>
+              {% endif %}
+
+              {% if c.manually_edited %}<span class="badge manual">manually edited</span>{% endif %}
+              {% if c.source_count and c.source_count > 1 %}<span class="badge source-count">{{ c.source_count }} sources</span>{% endif %}
+            {% else %}
+              {% if c.split_status == 'list_unresolved' %}
+                <span class="badge source unresolved">source list · names unresolved</span>
+              {% elif c.split_count %}
+                <span class="badge source">source post · {{ c.split_count }} item{% if c.split_count != 1 %}s{% endif %}</span>
+              {% elif c.split_status == 'unresolved_single' %}
+                <span class="badge unresolved">needs exact name</span>
+              {% else %}
+                <span class="badge muted">{{ (c.local_kind or 'other').replace('_',' ') }}</span>
+              {% endif %}
             {% endif %}
+
+            {% if c.status != 'unreviewed' %}<span class="badge status-{{ c.status }}">{{ c.status.replace('_',' ') }}</span>{% endif %}
           </div>
+
+          <h3>
+            {% if c.record_origin == 'split_child' %}
+              {{ c.competition_name or c.import_title or 'Unnamed opportunity' }}
+            {% else %}
+              {{ c.import_title or c.owner_name or 'Instagram source post' }}
+            {% endif %}
+          </h3>
 
           {% if c.record_origin == 'split_child' %}
-          <div class="confidence">
-            {{ c.local_score or 0 }}%<span>local extraction</span>
-          </div>
-          {% elif c.split_count %}
-          <div class="confidence">
-            {{ c.split_count }}<span>items found</span>
-          </div>
+            <p class="organizer">
+              {% if c.organizer %}{{ c.organizer }} · {% endif %}
+              {% if c.source_count %}{{ c.source_count }} source{% if c.source_count != 1 %}s{% endif %}{% endif %}
+            </p>
+          {% elif c.owner_username %}
+            <p class="organizer">@{{ c.owner_username }}</p>
           {% endif %}
         </div>
 
         {% if c.record_origin == 'split_child' %}
-          {% if c.source_timing %}
-            <p class="source-timing">{{ c.source_timing }} <span>from saved caption — verify before relying on it</span></p>
+        <div class="confidence">
+          {% if c.days_remaining is not none %}
+            {{ c.days_remaining if c.days_remaining >= 0 else 0 }}<span>{% if c.days_remaining >= 0 %}days remaining{% else %}past deadline{% endif %}</span>
+          {% else %}
+            {{ c.local_score or 0 }}%<span>local extraction</span>
           {% endif %}
+        </div>
+        {% elif c.split_count %}
+        <div class="confidence">{{ c.split_count }}<span>items found</span></div>
+        {% endif %}
+      </div>
 
-          <div class="facts">
-            <div><span>Deadline</span><strong>{{ c.deadline or c.deadline_text or 'Not stated in caption' }}</strong></div>
-            <div><span>Entry fee</span><strong>{{ c.entry_fee or 'Not extracted yet' }}</strong></div>
-            <div><span>Prize</span><strong>{{ c.prize or 'Not extracted yet' }}</strong></div>
-            <div><span>Eligibility</span><strong>{{ c.eligibility or 'Not extracted yet' }}</strong></div>
-          </div>
-
-          {% if c.source_excerpt %}
-            <details>
-              <summary>Why this item was extracted</summary>
-              <p class="raw">{{ c.source_excerpt }}</p>
-            </details>
-          {% endif %}
-        {% else %}
-          {% if c.split_status == 'list_unresolved' %}
-            <div class="source-note">
-              This looks like a roundup/list, but the caption does not name the individual items clearly enough to split them. The names may be inside the carousel images or reel.
-            </div>
-          {% elif c.split_count %}
-            <div class="source-note">
-              This post is being used only as a source. {{ c.split_count }} individually named opportunity item{% if c.split_count != 1 %}s were{% else %} was{% endif %} extracted from its caption.
-            </div>
-          {% elif c.split_status == 'unresolved_single' %}
-            <div class="source-note">
-              This looks opportunity-related, but the exact program/competition name could not be identified safely from the caption.
-            </div>
-          {% elif c.local_reason %}
-            <p class="local-reason">{{ c.local_reason }}</p>
-          {% endif %}
+      {% if c.record_origin == 'split_child' %}
+        {% if c.verification_job_status %}
+          <div class="job-status"><span class="spinner"></span> Verification {{ c.verification_job_status }}… this page will refresh automatically.</div>
         {% endif %}
 
-        {% if c.requirements %}<p class="notes"><strong>Requirements:</strong> {{ c.requirements }}</p>{% endif %}
-        {% if c.verification_notes %}<p class="notes"><strong>Verification note:</strong> {{ c.verification_notes }}</p>{% endif %}
-
-        {% if c.raw_text and c.record_origin == 'source_post' %}
-          <details>
-            <summary>Source caption / notes</summary>
-            <p class="raw">{{ c.raw_text }}</p>
-          </details>
+        {% if c.source_timing and not c.verified %}
+          <p class="source-timing">{{ c.source_timing }} <span>from saved caption — verify before relying on it</span></p>
         {% endif %}
 
-        {% if c.sources %}
-          <div class="sources">
-            <strong>Verification sources</strong>
-            {% for source in c.sources %}
-              <a href="{{ source.url }}" target="_blank" rel="noopener noreferrer">{{ source.title or source.url }}</a>
+        <div class="facts">
+          <div><span>Deadline</span><strong>{{ c.deadline or c.deadline_text or 'Unknown' }}</strong><small>{{ c.urgency_text }}</small></div>
+          <div><span>Entry fee</span><strong>{{ c.entry_fee or 'Unknown' }}</strong></div>
+          <div><span>Prize</span><strong>{{ c.prize or 'Unknown' }}</strong></div>
+          <div><span>Eligibility</span><strong>{{ c.eligibility or 'Unknown' }}</strong></div>
+        </div>
+
+        {% if c.last_verified_at %}
+          <p class="verification-meta">Last web check: {{ c.last_verified_at[:10] }} · cached for {{ cache_days }} days</p>
+        {% endif %}
+
+        {% if c.source_links %}
+        <details>
+          <summary>Attached source posts ({{ c.source_links|length }})</summary>
+          <div class="source-list compact">
+            {% for s in c.source_links %}
+              <div class="source-row">
+                <span>{% if s.owner_name %}{{ s.owner_name }}{% elif s.owner_username %}@{{ s.owner_username }}{% else %}Instagram source{% endif %}</span>
+                {% if s.instagram_url %}<a href="{{ s.instagram_url }}" target="_blank" rel="noopener noreferrer">Open</a>{% endif %}
+              </div>
             {% endfor %}
           </div>
+        </details>
         {% endif %}
+      {% else %}
+        {% if c.split_status == 'list_unresolved' %}
+          <div class="source-note">This looks like a roundup/list, but the individual names are not clear enough in the caption.</div>
+        {% elif c.split_count %}
+          <div class="source-note">This post is kept as provenance. Its named opportunities live separately under Actual opportunities.</div>
+        {% elif c.split_status == 'unresolved_single' %}
+          <div class="source-note">This looks relevant, but the exact opportunity name could not be identified safely.</div>
+        {% elif c.local_reason %}
+          <p class="local-reason">{{ c.local_reason }}</p>
+        {% endif %}
+      {% endif %}
 
-        <div class="actions">
-          {% if c.record_origin == 'split_child' %}
-            {% if ai_extract_ready %}
-              <form action="/competitions/{{ c.id }}/extract" method="post"><button type="submit" class="secondary">AI extract details</button></form>
-            {% endif %}
-            {% if free_verify_ready %}
+      {% if c.requirements %}<p class="notes"><strong>Requirements:</strong> {{ c.requirements }}</p>{% endif %}
+      {% if c.verification_notes %}<p class="notes"><strong>Verification note:</strong> {{ c.verification_notes }}</p>{% endif %}
+
+      {% if c.raw_text and c.record_origin == 'source_post' %}
+        <details><summary>Source caption / notes</summary><p class="raw">{{ c.raw_text }}</p></details>
+      {% endif %}
+
+      {% if c.sources %}
+        <div class="sources">
+          <strong>Verification sources</strong>
+          {% for source in c.sources %}
+            <a href="{{ source.url }}" target="_blank" rel="noopener noreferrer">{{ source.title or source.url }}</a>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <div class="actions">
+        {% if c.record_origin == 'split_child' %}
+          <a class="button-link secondary" href="/competitions/{{ c.id }}/edit">Edit / correct</a>
+
+          {% if ai_extract_ready %}
+            <form action="/competitions/{{ c.id }}/extract" method="post"><button type="submit" class="secondary">AI extract details</button></form>
+          {% endif %}
+
+          {% if not c.verification_job_status %}
+            {% if c.verified %}
+              <form action="/competitions/{{ c.id }}/verify" method="post">
+                <button type="submit" class="secondary">Use cached / verify</button>
+              </form>
+              <form action="/competitions/{{ c.id }}/verify" method="post">
+                <input type="hidden" name="force" value="1">
+                <button type="submit">Refresh verification</button>
+              </form>
+            {% else %}
               <form action="/competitions/{{ c.id }}/verify" method="post"><button type="submit">Verify Fast</button></form>
             {% endif %}
-            {% if c.instagram_url %}<a class="button-link secondary" href="{{ c.instagram_url }}" target="_blank" rel="noopener noreferrer">Source Instagram</a>{% endif %}
-          {% else %}
-            {% if c.instagram_url %}<a class="button-link secondary" href="{{ c.instagram_url }}" target="_blank" rel="noopener noreferrer">Open source post</a>{% endif %}
           {% endif %}
+
           {% if c.official_url %}<a class="button-link secondary" href="{{ c.official_url }}" target="_blank" rel="noopener noreferrer">Official site</a>{% endif %}
-          <form action="/competitions/{{ c.id }}/delete" method="post" onsubmit="return confirm('Delete this record?')"><button type="submit" class="danger">Delete</button></form>
-        </div>
-      </article>
-      {% else %}
-        <div class="empty">
-          <h2>No records in this view</h2>
-          <p>
-            {% if view == 'opportunities' %}
-              Re-import your <code>saved_posts.json</code> or click <strong>Rebuild local extraction</strong> to generate named opportunity records.
-            {% else %}
-              Try another tab above.
-            {% endif %}
-          </p>
-        </div>
-      {% endfor %}
-    </section>
-  </main>
+
+          <form action="/competitions/{{ c.id }}/review-state" method="post">
+            <input type="hidden" name="state" value="needs_review">
+            <button type="submit" class="secondary">Needs review</button>
+          </form>
+          <form action="/competitions/{{ c.id }}/review-state" method="post">
+            <input type="hidden" name="state" value="irrelevant">
+            <button type="submit" class="danger">Not an opportunity</button>
+          </form>
+        {% else %}
+          {% if c.instagram_url %}<a class="button-link secondary" href="{{ c.instagram_url }}" target="_blank" rel="noopener noreferrer">Open source post</a>{% endif %}
+        {% endif %}
+
+        <form action="/competitions/{{ c.id }}/delete" method="post" onsubmit="return confirm('Delete this record permanently?')">
+          <button type="submit" class="danger">Delete</button>
+        </form>
+      </div>
+    </article>
+    {% else %}
+      <div class="empty">
+        <h2>No records in this view</h2>
+        <p>Try another tab or import/refresh your Instagram export.</p>
+      </div>
+    {% endfor %}
+  </section>
+</main>
 </body>
 </html>
