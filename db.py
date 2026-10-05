@@ -333,24 +333,33 @@ def _child_raw_text(parent: sqlite3.Row, item: dict[str, Any]) -> str:
 
 def _remove_source_links(conn: sqlite3.Connection, source_id: int) -> None:
     linked = conn.execute(
-        "SELECT competition_id FROM opportunity_sources WHERE source_post_id = ?",
+        """
+        SELECT os.competition_id, c.manually_edited
+        FROM opportunity_sources os
+        JOIN competitions c ON c.id = os.competition_id
+        WHERE os.source_post_id = ?
+        """,
         (source_id,),
     ).fetchall()
-    conn.execute("DELETE FROM opportunity_sources WHERE source_post_id = ?", (source_id,))
 
+    # Parser-generated links are rebuilt. Manually reviewed/corrected links stay
+    # attached so a future rebuild cannot resurrect the old parser value beside
+    # the user's correction.
     for row in linked:
+        if row["manually_edited"]:
+            continue
+
         comp_id = row["competition_id"]
+        conn.execute(
+            "DELETE FROM opportunity_sources WHERE source_post_id=? AND competition_id=?",
+            (source_id, comp_id),
+        )
         remaining = conn.execute(
             "SELECT COUNT(*) FROM opportunity_sources WHERE competition_id = ?",
             (comp_id,),
         ).fetchone()[0]
         if remaining == 0:
-            comp = conn.execute(
-                "SELECT manually_edited FROM competitions WHERE id = ? AND record_origin = 'split_child'",
-                (comp_id,),
-            ).fetchone()
-            if comp and not comp["manually_edited"]:
-                conn.execute("DELETE FROM competitions WHERE id = ?", (comp_id,))
+            conn.execute("DELETE FROM competitions WHERE id = ?", (comp_id,))
 
     # Legacy pre-source-table children.
     legacy = conn.execute(
@@ -471,6 +480,22 @@ def _analyze_source(conn: sqlite3.Connection, source_id: int) -> int:
 
     created_or_attached = 0
     for item in items:
+        manual_match = conn.execute(
+            """
+            SELECT c.id
+            FROM opportunity_sources os
+            JOIN competitions c ON c.id = os.competition_id
+            WHERE os.source_post_id = ?
+              AND c.manually_edited = 1
+              AND COALESCE(os.source_excerpt, '') = COALESCE(?, '')
+            LIMIT 1
+            """,
+            (source_id, item.get("source_excerpt")),
+        ).fetchone()
+        if manual_match:
+            created_or_attached += 1
+            continue
+
         name = item["name"]
         key = _canonical_key(name)
         if not key:
@@ -1017,7 +1042,13 @@ def set_review_state(comp_id: int, state: str) -> None:
         raise ValueError("Invalid review state")
     with connect() as conn:
         conn.execute(
-            "UPDATE competitions SET review_state=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            """
+            UPDATE competitions
+            SET review_state=?,
+                manually_edited=CASE WHEN record_origin='split_child' THEN 1 ELSE manually_edited END,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
             (state, comp_id),
         )
 
