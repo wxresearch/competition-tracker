@@ -125,7 +125,6 @@
     <a href="/?view=opportunities" class="{% if view == 'opportunities' %}active{% endif %}">Actual opportunities <span>{{ stats.opportunities }}</span></a>
     <a href="/?view=sources" class="{% if view == 'sources' %}active{% endif %}">Source posts <span>{{ stats.source_lists }}</span></a>
     <a href="/?view=review" class="{% if view == 'review' %}active{% endif %}">Needs review <span>{{ stats.review }}</span></a>
-    <a href="/?view=other" class="{% if view == 'other' %}active{% endif %}">Other / irrelevant <span>{{ stats.other }}</span></a>
     <a href="/?view=all" class="{% if view == 'all' %}active{% endif %}">All records</a>
   </section>
 
@@ -184,8 +183,6 @@
       Original Instagram posts. One source can feed several opportunities, and one opportunity can keep several source posts.
     {% elif view == 'review' %}
       Parser-generated items you moved here or source posts that still need an exact opportunity name.
-    {% elif view == 'other' %}
-      Advice/resources plus opportunities you manually marked irrelevant.
     {% else %}
       All non-merged records.
     {% endif %}
