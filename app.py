@@ -66,6 +66,9 @@ def home(
     message: str = "",
     error: str = "",
 ):
+    if view == "other":
+        view = "opportunities"
+
     competitions = db.list_competitions(
         q=q,
         category=category,
