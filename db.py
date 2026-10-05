@@ -402,6 +402,7 @@ def _find_existing_cycle(
     conn: sqlite3.Connection,
     opportunity_key: str,
     cycle_year: int | None,
+    source_timestamp: int | None = None,
 ) -> sqlite3.Row | None:
     if cycle_year is not None:
         return conn.execute(
@@ -418,8 +419,48 @@ def _find_existing_cycle(
             (opportunity_key, cycle_year),
         ).fetchone()
 
-    # Unknown cycles are only flagged as possible duplicates. They are not
-    # auto-merged because identical names can represent different annual cycles.
+    candidates = conn.execute(
+        """
+        SELECT * FROM competitions
+        WHERE record_origin = 'split_child'
+          AND opportunity_key = ?
+          AND COALESCE(merged_into_id, 0) = 0
+          AND review_state != 'irrelevant'
+        ORDER BY manually_edited DESC, verified DESC, id ASC
+        """,
+        (opportunity_key,),
+    ).fetchall()
+
+    # For an unknown cycle, merge only when there is a single plausible current
+    # record. Same-year Instagram saves are normally the same annual cycle.
+    # Different source years remain separate so historical cycles do not collapse.
+    if len(candidates) != 1:
+        return None
+
+    candidate = candidates[0]
+    if candidate["cycle_year"] is None:
+        if not source_timestamp or not candidate["source_timestamp"]:
+            return candidate
+        try:
+            incoming = datetime.fromtimestamp(int(source_timestamp), tz=timezone.utc)
+            existing = datetime.fromtimestamp(int(candidate["source_timestamp"]), tz=timezone.utc)
+            if incoming.year == existing.year:
+                return candidate
+        except (ValueError, TypeError, OSError):
+            return None
+        return None
+
+    if source_timestamp:
+        try:
+            incoming = datetime.fromtimestamp(int(source_timestamp), tz=timezone.utc)
+            plausible_years = {incoming.year}
+            if incoming.month >= 9:
+                plausible_years.add(incoming.year + 1)
+            if candidate["cycle_year"] in plausible_years:
+                return candidate
+        except (ValueError, TypeError, OSError):
+            pass
+
     return None
 
 
@@ -515,7 +556,7 @@ def _analyze_source(conn: sqlite3.Connection, source_id: int) -> int:
             continue
         year = _cycle_year(item.get("deadline"), parent["source_timestamp"])
         opp_id = _get_or_create_opportunity(conn, name, category=item.get("kind"))
-        existing = _find_existing_cycle(conn, key, year)
+        existing = _find_existing_cycle(conn, key, year, parent["source_timestamp"])
 
         if existing:
             comp_id = existing["id"]
