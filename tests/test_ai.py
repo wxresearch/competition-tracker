@@ -1,4 +1,12 @@
-from ai import _best_search_results, _search_query, _tavily_headers, _validated_official_url
+import ai
+from ai import (
+    _best_search_results,
+    _gemini_models,
+    _is_transient_gemini_error,
+    _search_query,
+    _tavily_headers,
+    _validated_official_url,
+)
 
 
 def test_search_query_uses_name_and_current_cycle():
@@ -62,3 +70,25 @@ def test_tavily_rejects_obviously_wrong_key(monkeypatch):
         assert "tvly-" in str(exc)
     else:
         raise AssertionError("Expected invalid Tavily key to be rejected")
+
+
+def test_gemini_model_fallback_order(monkeypatch):
+    monkeypatch.setattr(ai, "GEMINI_MODEL", "gemini-3.8-flash")
+    monkeypatch.setattr(
+        ai,
+        "GEMINI_FALLBACK_MODELS",
+        "gemini-3.7-flash, gemini-3.6-flash,gemini-3.7-flash",
+    )
+    assert _gemini_models() == [
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
+    ]
+
+
+def test_gemini_transient_error_detection():
+    assert _is_transient_gemini_error(
+        RuntimeError("503 UNAVAILABLE: This model is currently experiencing high demand")
+    )
+    assert _is_transient_gemini_error(RuntimeError("429 RESOURCE_EXHAUSTED"))
+    assert not _is_transient_gemini_error(RuntimeError("400 invalid API key"))
