@@ -143,3 +143,54 @@ textarea { font: inherit; padding: 10px 12px; border: 1px solid #d9d9d3; border-
 }
 
 .duplicate-warning { background: #fff0d9; color: #7a4f0b; }
+
+
+/* Compact opportunity cards */
+.compact-facts { margin-bottom: 10px; }
+.clamp-value {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.35;
+}
+.compact-details {
+  margin: 8px 0;
+  border-top: 1px solid #ecece7;
+  padding-top: 8px;
+}
+.compact-details summary {
+  color: #555;
+  font-size: 13px;
+}
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  margin-top: 10px;
+}
+.detail-grid p {
+  margin: 0;
+  color: #4f4f4b;
+  font-size: 13px;
+}
+.verification-details .notes {
+  margin: 10px 0 6px;
+  font-size: 13px;
+}
+.verification-details .sources {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+.primary-actions {
+  margin-top: 12px;
+}
+.more-actions {
+  margin-top: 8px;
+}
+.more-actions .actions {
+  margin-top: 10px;
+}
+@media (max-width: 700px) {
+  .detail-grid { grid-template-columns: 1fr; }
+}
