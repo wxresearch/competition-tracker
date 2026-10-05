@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-SPLITTER_VERSION = 1
+SPLITTER_VERSION = 2
 
 MONTHS = {
     "jan": 1, "january": 1,
@@ -138,6 +138,10 @@ def _valid_name(name: str) -> bool:
         return False
     low = name.lower().strip()
     if low in GENERIC_BAD_NAMES:
+        return False
+    # Dates are metadata, never opportunity names. This also cleans up stale
+    # children created by older splitter versions such as "Oct 2".
+    if DATE_ANY_RE.fullmatch(name) or DATE_DAY_MONTH_RE.fullmatch(name):
         return False
     if low.startswith(("these ", "this ", "best ", "top ", "every ", "many ", "some ")):
         return False
