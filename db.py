@@ -395,19 +395,9 @@ def _find_existing_cycle(
             (opportunity_key, cycle_year),
         ).fetchone()
 
-    return conn.execute(
-        """
-        SELECT * FROM competitions
-        WHERE record_origin = 'split_child'
-          AND opportunity_key = ?
-          AND cycle_year IS NULL
-          AND COALESCE(merged_into_id, 0) = 0
-          AND review_state != 'irrelevant'
-        ORDER BY manually_edited DESC, verified DESC, id ASC
-        LIMIT 1
-        """,
-        (opportunity_key,),
-    ).fetchone()
+    # Unknown cycles are only flagged as possible duplicates. They are not
+    # auto-merged because identical names can represent different annual cycles.
+    return None
 
 
 def _attach_source(
@@ -583,6 +573,7 @@ def _deduplicate_children(conn: sqlite3.Connection) -> int:
           AND COALESCE(merged_into_id, 0) = 0
           AND review_state != 'irrelevant'
           AND opportunity_key IS NOT NULL AND opportunity_key != ''
+          AND cycle_year IS NOT NULL
         GROUP BY opportunity_key, cycle_year
         HAVING COUNT(*) > 1
         """
@@ -944,6 +935,20 @@ def list_competitions(
                 ).fetchall()
             ]
             item["source_count"] = len(item["source_links"])
+            if item.get("record_origin") == "split_child" and item.get("opportunity_key"):
+                item["possible_duplicates"] = conn.execute(
+                    """
+                    SELECT COUNT(*) FROM competitions
+                    WHERE record_origin='split_child'
+                      AND id != ?
+                      AND opportunity_key = ?
+                      AND review_state='active'
+                      AND COALESCE(merged_into_id,0)=0
+                    """,
+                    (item["id"], item["opportunity_key"]),
+                ).fetchone()[0]
+            else:
+                item["possible_duplicates"] = 0
             item["verification_job_status"] = active_jobs.get(item["id"])
             _decorate_deadline(item)
             result.append(item)
