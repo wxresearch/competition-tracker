@@ -24,19 +24,14 @@
 
     {% if message %}<div class="notice success">{{ message }}</div>{% endif %}
     {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
-    {% if not has_gemini_key and not has_groq_key %}
+    <div class="notice success">
+      <strong>Fast verification ready.</strong>
+      Verify Free uses one Tavily web search {% if has_tavily_key %}with your API key{% else %}in keyless mode{% endif %}; it no longer waits for Gemini/Groq.
+    </div>
+    {% if not ai_extract_ready %}
       <div class="notice warn">
-        <strong>Free verification setup:</strong> add <code>GEMINI_API_KEY</code> or <code>GROQ_API_KEY</code> to <code>.env</code>.
-        Using both gives provider failover. Tavily can run in keyless mode.
-      </div>
-    {% else %}
-      <div class="notice success">
-        <strong>Free verification ready.</strong>
-        AI:
-        {% if has_gemini_key %}Gemini{% endif %}
-        {% if has_gemini_key and has_groq_key %} + {% endif %}
-        {% if has_groq_key %}Groq backup{% endif %}.
-        Tavily uses {% if has_tavily_key %}your API key{% else %}keyless mode{% endif %}.
+        <strong>Optional AI detail extraction is off.</strong>
+        Add <code>GEMINI_API_KEY</code> or <code>GROQ_API_KEY</code> only if you want the separate AI extract action.
       </div>
     {% endif %}
 
@@ -97,7 +92,7 @@
         <form action="/reclassify" method="post">
           <button type="submit" class="secondary">Rebuild local extraction</button>
         </form>
-        {% if view == 'opportunities' and (has_gemini_key or has_groq_key) %}
+        {% if view == 'opportunities' and ai_extract_ready %}
         <form action="/extract-next" method="post" class="batch-form">
           <label>Free AI extract next</label>
           <input type="number" name="batch_size" min="1" max="25" value="5">
@@ -233,11 +228,11 @@
 
         <div class="actions">
           {% if c.record_origin == 'split_child' %}
-            {% if has_gemini_key or has_groq_key %}
+            {% if ai_extract_ready %}
               <form action="/competitions/{{ c.id }}/extract" method="post"><button type="submit" class="secondary">AI extract details</button></form>
             {% endif %}
             {% if free_verify_ready %}
-              <form action="/competitions/{{ c.id }}/verify" method="post"><button type="submit">Verify Free</button></form>
+              <form action="/competitions/{{ c.id }}/verify" method="post"><button type="submit">Verify Fast</button></form>
             {% endif %}
             {% if c.instagram_url %}<a class="button-link secondary" href="{{ c.instagram_url }}" target="_blank" rel="noopener noreferrer">Source Instagram</a>{% endif %}
           {% else %}
