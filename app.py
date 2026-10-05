@@ -248,6 +248,48 @@ def verify(
     return go(message="Verification queued. The page will refresh automatically when it finishes.")
 
 
+@app.post("/verify-all")
+def verify_all(background_tasks: BackgroundTasks):
+    records = db.list_competitions(view="opportunities")
+    queued = 0
+    cached = 0
+    already_running = 0
+
+    for record in records:
+        comp_id = int(record["id"])
+
+        if record.get("verification_job_status"):
+            already_running += 1
+            continue
+
+        if db.verification_is_fresh(comp_id):
+            cached += 1
+            continue
+
+        job_id = db.create_verification_job(comp_id)
+        background_tasks.add_task(_run_verification_job, comp_id, job_id)
+        queued += 1
+
+    if queued == 0:
+        return go(
+            message=(
+                "Nothing new to verify. "
+                f"{cached} opportunities are still within the {db.VERIFICATION_CACHE_DAYS}-day cache"
+                + (f" and {already_running} are already being verified." if already_running else ".")
+            ),
+            view="opportunities",
+        )
+
+    return go(
+        message=(
+            f"Queued {queued} opportunities for verification. "
+            f"Skipped {cached} cached and {already_running} already running. "
+            "They will process in the background and the page will refresh automatically."
+        ),
+        view="opportunities",
+    )
+
+
 @app.post("/extract-next")
 def extract_next(batch_size: int = Form(default=10)):
     batch_size = max(1, min(batch_size, 25))
