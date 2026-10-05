@@ -16,6 +16,8 @@ GEMINI_FALLBACK_MODELS = os.getenv(
     "GEMINI_FALLBACK_MODELS",
     "gemini-3.7-flash,gemini-3.6-flash",
 )
+GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 TAVILY_SEARCH_URL = "https://api.tavily.com/search"
 TAVILY_EXTRACT_URL = "https://api.tavily.com/extract"
 
@@ -65,6 +67,57 @@ def _is_transient_gemini_error(exc: Exception) -> bool:
     return any(marker in message for marker in transient_markers)
 
 
+def _groq_key() -> str:
+    return (os.getenv("GROQ_API_KEY") or "").strip()
+
+
+def _groq_structured(prompt: str, schema: type[Any]) -> Any:
+    key = _groq_key()
+    if not key:
+        raise RuntimeError("GROQ_API_KEY is not configured.")
+
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Return only JSON matching the supplied JSON schema. "
+                    "Do not include markdown or commentary outside the JSON."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.1,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "opportunity_result",
+                "strict": False,
+                "schema": schema.model_json_schema(),
+            },
+        },
+    }
+
+    with httpx.Client(timeout=45.0, follow_redirects=True) as client:
+        response = client.post(
+            GROQ_API_URL,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+    try:
+        text = data["choices"][0]["message"]["content"]
+        return schema.model_validate_json(text)
+    except Exception as exc:
+        raise RuntimeError(f"Could not parse Groq structured result: {exc}") from exc
+
+
 def _gemini_structured(prompt: str, schema: type[Any]) -> Any:
     client = _gemini_client()
     errors: list[str] = []
@@ -96,9 +149,24 @@ def _gemini_structured(prompt: str, schema: type[Any]) -> Any:
             # the next stable Flash model instead of failing the whole request.
             continue
 
+    # Google can occasionally be saturated across multiple Flash variants.
+    # If the user configured a free Groq key, use Groq as a second provider
+    # rather than making them retry the same overloaded backend.
+    if _groq_key():
+        try:
+            return _groq_structured(prompt, schema)
+        except Exception as exc:
+            errors.append(f"{GROQ_MODEL}: {exc}")
+
+    suffix = (
+        " Configure GROQ_API_KEY to enable the free Groq backup provider."
+        if not _groq_key()
+        else ""
+    )
     raise RuntimeError(
-        "All configured Gemini models were temporarily unavailable or rate-limited. "
+        "All configured free AI providers were unavailable or rate-limited. "
         + " | ".join(errors)
+        + suffix
     )
 
 
