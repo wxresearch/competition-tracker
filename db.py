@@ -206,6 +206,18 @@ def init_db() -> None:
             "WHERE review_state IS NULL OR review_state = ''"
         )
 
+        # Background jobs cannot survive a local app/process restart. Clean up
+        # stale queued/running rows so the dashboard does not refresh forever.
+        conn.execute(
+            """
+            UPDATE verification_jobs
+            SET status='error',
+                error='Verification was interrupted by an app restart.',
+                finished_at=CURRENT_TIMESTAMP
+            WHERE status IN ('queued','running')
+            """
+        )
+
         _migrate_existing_children(conn)
 
     analyze_all_source_posts(force=False)
