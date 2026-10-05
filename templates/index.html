@@ -5,11 +5,79 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Opportunity Tracker</title>
   <link rel="stylesheet" href="/static/style.css">
-  {% if has_active_jobs %}
   <script>
-    setTimeout(() => window.location.reload(), 2500);
+    // Keep the user at the same place after form redirects and verification refreshes.
+    // Card-relative restoration is more stable than raw scrollY when card heights change.
+    const TRACKER_SCROLL_KEY = "opportunity-tracker-scroll";
+
+    if ("scrollRestoration" in history) {
+      history.scrollRestoration = "manual";
+    }
+
+    function saveTrackerScroll() {
+      const cards = Array.from(document.querySelectorAll(".card"));
+      const anchor = cards.find((card) => {
+        const rect = card.getBoundingClientRect();
+        return rect.bottom > 0 && rect.top < window.innerHeight;
+      });
+      const state = {
+        y: window.scrollY,
+        cardId: anchor ? anchor.id : null,
+        cardOffset: anchor ? anchor.getBoundingClientRect().top : null,
+        savedAt: Date.now()
+      };
+      sessionStorage.setItem(TRACKER_SCROLL_KEY, JSON.stringify(state));
+    }
+
+    function restoreTrackerScroll() {
+      let state = null;
+      try {
+        state = JSON.parse(sessionStorage.getItem(TRACKER_SCROLL_KEY) || "null");
+      } catch (_) {
+        sessionStorage.removeItem(TRACKER_SCROLL_KEY);
+      }
+      if (!state) return;
+
+      // Only retain a recent navigation position, not an old position from a prior session.
+      if (!state.savedAt || Date.now() - state.savedAt > 15 * 60 * 1000) {
+        sessionStorage.removeItem(TRACKER_SCROLL_KEY);
+        return;
+      }
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const card = state.cardId ? document.getElementById(state.cardId) : null;
+          if (card && typeof state.cardOffset === "number") {
+            const newY = window.scrollY + card.getBoundingClientRect().top - state.cardOffset;
+            window.scrollTo(0, Math.max(0, newY));
+          } else if (typeof state.y === "number") {
+            window.scrollTo(0, state.y);
+          }
+          sessionStorage.removeItem(TRACKER_SCROLL_KEY);
+        });
+      });
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      restoreTrackerScroll();
+
+      document.addEventListener("submit", () => {
+        saveTrackerScroll();
+      });
+
+      document.addEventListener("click", (event) => {
+        const editLink = event.target.closest('a[href*="/competitions/"][href$="/edit"]');
+        if (editLink) saveTrackerScroll();
+      });
+
+      {% if has_active_jobs %}
+      setTimeout(() => {
+        saveTrackerScroll();
+        window.location.reload();
+      }, 2500);
+      {% endif %}
+    });
   </script>
-  {% endif %}
 </head>
 <body>
 <main class="shell">
@@ -120,7 +188,7 @@
 
   <section class="cards">
     {% for c in competitions %}
-    <article class="card {% if c.record_origin == 'source_post' %}source-card{% endif %} {% if c.urgency_bucket == 'week' or c.urgency_bucket == 'today' %}urgent-card{% endif %}">
+    <article id="record-{{ c.id }}" class="card {% if c.record_origin == 'source_post' %}source-card{% endif %} {% if c.urgency_bucket == 'week' or c.urgency_bucket == 'today' %}urgent-card{% endif %}">
       <div class="card-top">
         <div>
           <div class="badges">
