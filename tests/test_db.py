@@ -315,3 +315,35 @@ def test_delete_unresolved_sources_only_removes_needs_exact_name_sources(monkeyp
     assert db.get_competition(int(unresolved_id)) is None
     assert db.get_competition(int(review_child_id)) is not None
     assert db.get_competition(int(normal_source_id)) is not None
+
+
+def test_irrelevant_records_are_hidden_from_visible_views(monkeypatch, tmp_path):
+    setup_db(monkeypatch, tmp_path)
+
+    with db.connect() as conn:
+        irrelevant_child = conn.execute(
+            """
+            INSERT INTO competitions (
+                competition_name, record_origin, review_state, split_status
+            )
+            VALUES ('Hidden False Positive', 'split_child', 'irrelevant', 'child')
+            """
+        ).lastrowid
+        irrelevant_source = conn.execute(
+            """
+            INSERT INTO competitions (
+                import_title, record_origin, review_state, split_status
+            )
+            VALUES ('Hidden Advice Post', 'source_post', 'active', 'not_opportunity')
+            """
+        ).lastrowid
+
+    visible = db.list_competitions(view="all")
+    visible_ids = {item["id"] for item in visible}
+
+    assert int(irrelevant_child) not in visible_ids
+    assert int(irrelevant_source) not in visible_ids
+
+    # Hidden is not deleted: direct lookup still works.
+    assert db.get_competition(int(irrelevant_child)) is not None
+    assert db.get_competition(int(irrelevant_source)) is not None
