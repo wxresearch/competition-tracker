@@ -131,7 +131,11 @@ def test_tavily_only_verification_without_ai(monkeypatch):
             }
         ],
     }
-    monkeypatch.setattr(ai, "_tavily_search_data", lambda record, include_answer=False: fake)
+    monkeypatch.setattr(
+        ai,
+        "_tavily_search_data",
+        lambda record, include_answer=False, search_depth="basic", max_results=5: fake,
+    )
     record = {
         "competition_name": "Example Essay Contest",
         "import_title": "Example Essay Contest",
@@ -147,3 +151,50 @@ def test_tavily_only_verification_without_ai(monkeypatch):
     assert result.prize is not None
     assert result.confidence == 0.45
     assert sources[0]["url"] == "https://examplecontest.org/rules"
+
+
+def test_verify_uses_single_tavily_fast_path(monkeypatch):
+    calls = {"count": 0}
+
+    fake = {
+        "answer": (
+            "The Example Essay Contest is currently open. "
+            "The deadline is October 31, 2026."
+        ),
+        "results": [
+            {
+                "title": "Official Example Essay Contest",
+                "url": "https://examplecontest.org/rules",
+                "content": "Official rules.",
+                "score": 0.95,
+            }
+        ],
+    }
+
+    def fake_search(record, include_answer=False, search_depth="basic", max_results=5):
+        calls["count"] += 1
+        assert include_answer == "basic"
+        assert search_depth == "basic"
+        assert max_results == 5
+        return fake
+
+    monkeypatch.setattr(ai, "_tavily_search_data", fake_search)
+    monkeypatch.setattr(
+        ai,
+        "_gemini_structured",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Verify Fast must not call Gemini/Groq")
+        ),
+    )
+
+    result, sources = ai.verify_competition(
+        {
+            "competition_name": "Example Essay Contest",
+            "import_title": "Example Essay Contest",
+            "local_kind": "competition",
+        }
+    )
+
+    assert calls["count"] == 1
+    assert result.deadline == "2026-10-31"
+    assert sources
