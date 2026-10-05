@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Edit Opportunity · Opportunity Tracker</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main class="shell narrow-shell">
+  <header class="edit-header">
+    <div>
+      <p class="eyebrow">MANUAL CORRECTION</p>
+      <h1>Edit opportunity</h1>
+      <p class="subtitle">Manual edits are preserved when source posts are reprocessed.</p>
+    </div>
+    <a class="button-link secondary" href="/">← Back to tracker</a>
+  </header>
+
+  <form method="post" action="/competitions/{{ c.id }}/edit" class="panel edit-form">
+    <div class="form-grid">
+      <label class="span-2">
+        <span>Opportunity name</span>
+        <input name="competition_name" value="{{ c.competition_name or '' }}" required>
+      </label>
+
+      <label>
+        <span>Organizer</span>
+        <input name="organizer" value="{{ c.organizer or '' }}">
+      </label>
+
+      <label>
+        <span>Category</span>
+        <input name="category" value="{{ c.category or c.local_kind or '' }}">
+      </label>
+
+      <label>
+        <span>Cycle year</span>
+        <input name="cycle_year" type="number" min="2000" max="2100" value="{{ c.cycle_year or '' }}" placeholder="2026">
+      </label>
+
+      <label>
+        <span>Cycle label</span>
+        <input name="cycle_label" value="{{ c.cycle_label or '' }}" placeholder="2026–27">
+      </label>
+
+      <label>
+        <span>Deadline</span>
+        <input name="deadline" type="date" value="{{ c.deadline or '' }}">
+      </label>
+
+      <label>
+        <span>Deadline wording</span>
+        <input name="deadline_text" value="{{ c.deadline_text or '' }}" placeholder="October 31, 2026">
+      </label>
+
+      <label>
+        <span>Entry fee</span>
+        <input name="entry_fee" value="{{ c.entry_fee or '' }}">
+      </label>
+
+      <label>
+        <span>Prize</span>
+        <input name="prize" value="{{ c.prize or '' }}">
+      </label>
+
+      <label class="span-2">
+        <span>Eligibility</span>
+        <textarea name="eligibility" rows="3">{{ c.eligibility or '' }}</textarea>
+      </label>
+
+      <label class="span-2">
+        <span>Requirements</span>
+        <textarea name="requirements" rows="4">{{ c.requirements or '' }}</textarea>
+      </label>
+
+      <label class="span-2">
+        <span>Official URL</span>
+        <input name="official_url" type="url" value="{{ c.official_url or '' }}" placeholder="https://...">
+      </label>
+
+      <label>
+        <span>Status</span>
+        <select name="status">
+          {% for s in ['unreviewed','extracted','open','upcoming','closed','unclear','not_competition'] %}
+            <option value="{{ s }}" {% if c.status == s %}selected{% endif %}>{{ s.replace('_',' ')|title }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <div class="manual-flag">
+        <span>Record</span>
+        <strong>{% if c.manually_edited %}Manually edited{% else %}Parser-generated{% endif %}</strong>
+      </div>
+    </div>
+
+    <div class="edit-actions">
+      <button type="submit">Save corrections</button>
+      <a href="/" class="button-link secondary">Cancel</a>
+    </div>
+  </form>
+
+  <section class="panel">
+    <h2>Review state</h2>
+    <p>Use these instead of deleting when the parser is uncertain. You can restore an item later.</p>
+    <div class="actions">
+      <form method="post" action="/competitions/{{ c.id }}/review-state">
+        <input type="hidden" name="state" value="active">
+        <button class="secondary" type="submit">Keep as opportunity</button>
+      </form>
+      <form method="post" action="/competitions/{{ c.id }}/review-state">
+        <input type="hidden" name="state" value="needs_review">
+        <button class="secondary" type="submit">Move to Needs Review</button>
+      </form>
+      <form method="post" action="/competitions/{{ c.id }}/review-state">
+        <input type="hidden" name="state" value="irrelevant">
+        <button class="danger" type="submit">Mark irrelevant</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Merge a duplicate</h2>
+    <p>Merging keeps this record and attaches the duplicate's Instagram sources and missing details to it.</p>
+    {% if merge_candidates %}
+      <form method="post" action="/competitions/{{ c.id }}/merge" class="merge-form">
+        <select name="duplicate_id" required>
+          <option value="">Choose duplicate…</option>
+          {% for d in merge_candidates %}
+            <option value="{{ d.id }}">
+              #{{ d.id }} · {{ d.competition_name }}
+              {% if d.cycle_year %} · {{ d.cycle_year }}{% endif %}
+              {% if d.deadline %} · due {{ d.deadline }}{% endif %}
+            </option>
+          {% endfor %}
+        </select>
+        <button type="submit" onclick="return confirm('Merge the selected record into this one?')">Merge duplicate</button>
+      </form>
+    {% else %}
+      <p class="muted-text">No likely merge candidates are currently visible.</p>
+    {% endif %}
+  </section>
+
+  {% if c.source_links %}
+  <section class="panel">
+    <h2>Attached source posts · {{ c.source_links|length }}</h2>
+    <div class="source-list">
+      {% for s in c.source_links %}
+        <div class="source-row">
+          <div>
+            <strong>{% if s.owner_name %}{{ s.owner_name }}{% elif s.owner_username %}@{{ s.owner_username }}{% else %}Instagram source{% endif %}</strong>
+            {% if s.source_excerpt %}<p>{{ s.source_excerpt }}</p>{% endif %}
+          </div>
+          {% if s.instagram_url %}<a href="{{ s.instagram_url }}" target="_blank" rel="noopener noreferrer">Open source</a>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+</main>
+</body>
+</html>
