@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-SPLITTER_VERSION = 3
+SPLITTER_VERSION = 4
 
 MONTHS = {
     "jan": 1, "january": 1,
@@ -92,7 +92,7 @@ FRAGMENT_LEADING_WORDS = {
     "with", "without", "get", "gets", "getting", "got",
     "learn", "learning", "use", "using", "check", "find", "finding",
     "make", "making", "need", "needs", "needed", "looking",
-    "interested", "discover", "earn", "earning", "here",
+    "interested", "discover", "earn", "earning", "here", "rating", "rated",
 }
 
 FRAGMENT_PREFIX_RE = re.compile(
@@ -132,6 +132,13 @@ def _cleanup_name(value: str) -> str:
             name = name[len(prefix):].strip()
             low = name.lower()
             break
+
+    # A lowercase "the" is usually sentence grammar, not part of the official
+    # title: "the Conrad Challenge" -> "Conrad Challenge". Preserve a capital
+    # "The" because some official names genuinely include it.
+    if name.startswith("the ") and len(name.split()) >= 3:
+        name = name[4:].strip()
+
     return name.strip(" -–—:;,.()[]{}")
 
 
@@ -163,6 +170,12 @@ def _valid_name(name: str) -> bool:
     if low.startswith(("these ", "this ", "best ", "top ", "every ", "many ", "some ")):
         return False
     if FRAGMENT_PREFIX_RE.search(name):
+        return False
+    if re.fullmatch(
+        r"(?i)(?:the\s+)?(?:biggest|greatest|hardest|main|major)\s+"
+        r"(?:challenge|competition|contest|scholarship|award|program)",
+        name.strip(),
+    ):
         return False
 
     # Reject generic prose such as "With this scholarship" or
