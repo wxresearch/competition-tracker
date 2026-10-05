@@ -73,3 +73,13 @@ def test_opening_dates_are_not_mislabeled_as_deadlines():
     diamond = next(x for x in result["items"] if "Diamond Challenge" in x["name"])
     assert diamond["deadline"] is None
     assert diamond["source_timing"] == "Opens 16 September"
+
+
+def test_date_label_never_becomes_opportunity_name():
+    text = """8 competitions with deadlines.
+Oct 2: Harvard Moot Court Legal Essay Contest
+"""
+    result = split_source_post(text, source_timestamp=1790893224)
+    names = [x["name"] for x in result["items"]]
+    assert "Oct 2" not in names
+    assert "Harvard Moot Court Legal Essay Contest" in names
