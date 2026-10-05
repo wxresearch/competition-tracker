@@ -75,13 +75,46 @@ is_competition=false.
     return _gemini_structured(prompt, CompetitionExtraction)
 
 
-def _tavily_headers() -> dict[str, str]:
-    key = os.getenv("TAVILY_API_KEY")
-    if not key:
+def _tavily_key() -> str:
+    return (os.getenv("TAVILY_API_KEY") or "").strip()
+
+
+def _tavily_headers(use_keyless: bool = False) -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    key = _tavily_key()
+
+    if use_keyless or not key:
+        headers["X-Tavily-Access-Mode"] = "keyless"
+        return headers
+
+    if not key.startswith("tvly-"):
         raise RuntimeError(
-            "TAVILY_API_KEY is missing. Create a free Tavily API key and add it to .env."
+            "TAVILY_API_KEY does not look like a Tavily API key. "
+            "It should begin with 'tvly-'. Check your .env file."
         )
-    return {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+
+    headers["Authorization"] = f"Bearer {key}"
+    return headers
+
+
+def _tavily_post(url: str, payload: dict[str, Any], timeout: float) -> httpx.Response:
+    """
+    Use the user's Tavily key when available. If Tavily rejects it with 401,
+    retry once in Tavily's supported keyless mode so free verification can
+    still work under the shared keyless rate limit.
+    """
+    with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+        response = client.post(url, headers=_tavily_headers(), json=payload)
+
+        if response.status_code == 401 and _tavily_key():
+            response = client.post(
+                url,
+                headers=_tavily_headers(use_keyless=True),
+                json=payload,
+            )
+
+        response.raise_for_status()
+        return response
 
 
 def _search_query(record: dict[str, Any]) -> str:
@@ -107,10 +140,8 @@ def _tavily_search(record: dict[str, Any]) -> list[dict[str, Any]]:
         "include_raw_content": False,
     }
 
-    with httpx.Client(timeout=35.0, follow_redirects=True) as client:
-        response = client.post(TAVILY_SEARCH_URL, headers=_tavily_headers(), json=payload)
-        response.raise_for_status()
-        data = response.json()
+    response = _tavily_post(TAVILY_SEARCH_URL, payload, timeout=35.0)
+    data = response.json()
 
     results = data.get("results") or []
     return [r for r in results if isinstance(r, dict) and r.get("url")]
@@ -171,10 +202,8 @@ def _tavily_extract(urls: list[str]) -> dict[str, str]:
     }
 
     try:
-        with httpx.Client(timeout=45.0, follow_redirects=True) as client:
-            response = client.post(TAVILY_EXTRACT_URL, headers=_tavily_headers(), json=payload)
-            response.raise_for_status()
-            data = response.json()
+        response = _tavily_post(TAVILY_EXTRACT_URL, payload, timeout=45.0)
+        data = response.json()
     except Exception:
         # Search snippets are still usable if extraction fails on a site.
         return {}
