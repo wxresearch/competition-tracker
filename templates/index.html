@@ -146,6 +146,7 @@
 
               {% if c.manually_edited %}<span class="badge manual">manually edited</span>{% endif %}
               {% if c.source_count and c.source_count > 1 %}<span class="badge source-count">{{ c.source_count }} sources</span>{% endif %}
+              {% if c.possible_duplicates %}<span class="badge duplicate-warning">{{ c.possible_duplicates }} possible duplicate{% if c.possible_duplicates != 1 %}s{% endif %}</span>{% endif %}
             {% else %}
               {% if c.split_status == 'list_unresolved' %}
                 <span class="badge source unresolved">source list · names unresolved</span>
