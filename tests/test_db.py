@@ -276,3 +276,42 @@ def test_init_db_migrates_existing_legacy_schema(monkeypatch, tmp_path):
     assert "verification_level" in columns
     assert "idx_comp_opportunity" in indexes
     assert "idx_comp_key_cycle" in indexes
+
+
+def test_delete_unresolved_sources_only_removes_needs_exact_name_sources(monkeypatch, tmp_path):
+    setup_db(monkeypatch, tmp_path)
+
+    with db.connect() as conn:
+        unresolved_id = conn.execute(
+            """
+            INSERT INTO competitions (
+                import_title, record_origin, split_status, review_state
+            )
+            VALUES ('Unresolved Source', 'source_post', 'unresolved_single', 'active')
+            """
+        ).lastrowid
+
+        review_child_id = conn.execute(
+            """
+            INSERT INTO competitions (
+                competition_name, record_origin, split_status, review_state
+            )
+            VALUES ('Keep Me', 'split_child', 'child', 'needs_review')
+            """
+        ).lastrowid
+
+        normal_source_id = conn.execute(
+            """
+            INSERT INTO competitions (
+                import_title, record_origin, split_status, review_state
+            )
+            VALUES ('Normal Source', 'source_post', 'split_single', 'active')
+            """
+        ).lastrowid
+
+    deleted = db.delete_unresolved_sources()
+    assert deleted == 1
+
+    assert db.get_competition(int(unresolved_id)) is None
+    assert db.get_competition(int(review_child_id)) is not None
+    assert db.get_competition(int(normal_source_id)) is not None
