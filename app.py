@@ -65,7 +65,8 @@ def home(
             "has_gemini_key": bool(os.getenv("GEMINI_API_KEY")),
             "has_tavily_key": bool(os.getenv("TAVILY_API_KEY")),
             "has_groq_key": bool(os.getenv("GROQ_API_KEY")),
-            "free_verify_ready": bool(os.getenv("GEMINI_API_KEY") or os.getenv("GROQ_API_KEY")),
+            "ai_extract_ready": bool(os.getenv("GEMINI_API_KEY") or os.getenv("GROQ_API_KEY")),
+            "free_verify_ready": True,
         },
     )
 
