@@ -112,3 +112,31 @@ def test_real_titles_still_survive_fragment_filter():
     assert "The Legacy Lab Foundation Scholarship" in names
     assert "National Space Club Keynote Scholarship" in names
     assert "Conrad Challenge" in names
+
+
+def test_more_generic_fragments_are_rejected():
+    text = """
+Rating college scholarship
+The biggest challenge
+"""
+    result = split_source_post(text)
+    names = [x["name"] for x in result["items"]]
+    assert "Rating college scholarship" not in names
+    assert "The biggest challenge" not in names
+
+
+def test_lowercase_the_is_removed_from_real_title_variants():
+    text = """
+the Congressional Award
+the Conrad Challenge
+the Diamond Challenge
+The Legacy Lab Foundation Scholarship
+"""
+    result = split_source_post(text)
+    names = [x["name"] for x in result["items"]]
+
+    assert "Congressional Award" in names
+    assert "Conrad Challenge" in names
+    assert "Diamond Challenge" in names
+    assert "the Conrad Challenge" not in names
+    assert "The Legacy Lab Foundation Scholarship" in names
