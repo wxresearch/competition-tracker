@@ -162,8 +162,6 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_comp_verified ON competitions(verified);
             CREATE INDEX IF NOT EXISTS idx_comp_origin ON competitions(record_origin);
             CREATE INDEX IF NOT EXISTS idx_comp_parent ON competitions(parent_id);
-            CREATE INDEX IF NOT EXISTS idx_comp_opportunity ON competitions(opportunity_id);
-            CREATE INDEX IF NOT EXISTS idx_comp_key_cycle ON competitions(opportunity_key, cycle_year);
             CREATE INDEX IF NOT EXISTS idx_jobs_comp_status ON verification_jobs(competition_id, status);
             """
         )
@@ -201,6 +199,15 @@ def init_db() -> None:
             "UPDATE competitions SET record_origin = 'source_post' "
             "WHERE record_origin IS NULL OR record_origin = ''"
         )
+        # Indexes that depend on migrated columns must be created only after
+        # _ensure_column has added those columns to older databases.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_comp_opportunity ON competitions(opportunity_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_comp_key_cycle ON competitions(opportunity_key, cycle_year)"
+        )
+
         conn.execute(
             "UPDATE competitions SET review_state = 'active' "
             "WHERE review_state IS NULL OR review_state = ''"
