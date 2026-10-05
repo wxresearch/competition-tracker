@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+import sqlite3
 
 import db
 
@@ -175,3 +176,73 @@ def test_unknown_cycle_duplicates_are_flagged_not_auto_merged(monkeypatch, tmp_p
     assert len(items) == 2
     assert all(item["cycle_year"] is None for item in items)
     assert all(item["possible_duplicates"] == 1 for item in items)
+
+
+def test_init_db_migrates_existing_legacy_schema(monkeypatch, tmp_path):
+    legacy_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(legacy_path)
+    conn.executescript(
+        """
+        CREATE TABLE competitions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            import_title TEXT,
+            raw_text TEXT,
+            instagram_url TEXT,
+            imported_official_url TEXT,
+            competition_name TEXT,
+            organizer TEXT,
+            category TEXT,
+            deadline TEXT,
+            deadline_text TEXT,
+            entry_fee TEXT,
+            prize TEXT,
+            eligibility TEXT,
+            requirements TEXT,
+            official_url TEXT,
+            ai_confidence REAL DEFAULT 0,
+            verified INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'unreviewed',
+            verification_notes TEXT,
+            sources_json TEXT DEFAULT '[]',
+            local_kind TEXT,
+            local_score INTEGER DEFAULT 0,
+            local_reason TEXT,
+            local_is_opportunity INTEGER DEFAULT 0,
+            local_classifier_version INTEGER DEFAULT 0,
+            record_origin TEXT DEFAULT 'source_post',
+            parent_id INTEGER,
+            source_timestamp INTEGER,
+            owner_name TEXT,
+            owner_username TEXT,
+            owner_url TEXT,
+            split_status TEXT DEFAULT 'not_analyzed',
+            split_count INTEGER DEFAULT 0,
+            local_splitter_version INTEGER DEFAULT 0,
+            source_timing TEXT,
+            source_excerpt TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(db, "DB_PATH", legacy_path)
+    db.init_db()
+
+    with db.connect() as conn:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(competitions)").fetchall()
+        }
+        indexes = {
+            row["name"]
+            for row in conn.execute("PRAGMA index_list(competitions)").fetchall()
+        }
+
+    assert "opportunity_id" in columns
+    assert "cycle_year" in columns
+    assert "verification_level" in columns
+    assert "idx_comp_opportunity" in indexes
+    assert "idx_comp_key_cycle" in indexes
