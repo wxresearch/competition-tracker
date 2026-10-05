@@ -156,12 +156,12 @@ def test_unknown_cycle_duplicates_are_flagged_not_auto_merged(monkeypatch, tmp_p
         [
             source_row(
                 "https://www.instagram.com/p/unknown1/",
-                "Conrad Challenge is a competition for high school students.",
+                "Conrad Challenge",
                 ts,
             ),
             source_row(
                 "https://www.instagram.com/p/unknown2/",
-                "Students should consider the Conrad Challenge.",
+                "Conrad Challenge",
                 ts,
             ),
         ]
