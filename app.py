@@ -110,6 +110,8 @@ def extract(comp_id: int):
         lower = message.lower()
         if "gemini_api_key is missing" in lower:
             return go(error="Gemini is not configured yet. Add GEMINI_API_KEY to your .env file.")
+        if "503" in message or "unavailable" in lower or "high demand" in lower:
+            return go(error="Gemini is temporarily overloaded. The tracker tried its fallback models too. Try Verify Free again later; your data is safe.")
         if "429" in message or "quota" in lower or "rate limit" in lower:
             return go(error="The free AI service hit a temporary quota/rate limit. Try again later; your local data is safe.")
         return go(error=message)
@@ -136,6 +138,8 @@ def verify(comp_id: int):
             return go(error="Gemini is not configured yet. Add GEMINI_API_KEY to your .env file.")
         if "does not look like a tavily api key" in lower:
             return go(error="Your Tavily key looks invalid. Tavily keys begin with 'tvly-'. You can fix/remove TAVILY_API_KEY; keyless verification is also supported.")
+        if "503" in message or "unavailable" in lower or "high demand" in lower:
+            return go(error="Gemini is temporarily overloaded. The tracker already tried alternate stable Flash models. Try Verify Free again later; the Tavily search results and your saved data are safe.")
         if "429" in message or "quota" in lower or "rate limit" in lower or "credits" in lower:
             return go(error="The free verification service hit its current usage limit. Try again after the service resets, or check your Gemini/Tavily free-tier usage.")
         return go(error=message)
