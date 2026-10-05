@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-SPLITTER_VERSION = 2
+SPLITTER_VERSION = 3
 
 MONTHS = {
     "jan": 1, "january": 1,
@@ -84,6 +84,23 @@ LEADING_NOISE = (
     "like ", "try ", "enter ", "join ", "apply to ", "apply for ",
 )
 
+# These are strong signs that a suffix match is ordinary prose rather than the
+# proper name of an opportunity. Keep this conservative so titles such as
+# "The Legacy Lab Foundation Scholarship" remain valid.
+FRAGMENT_LEADING_WORDS = {
+    "then", "want", "wants", "wanted", "winning", "win", "wins",
+    "with", "without", "get", "gets", "getting", "got",
+    "learn", "learning", "use", "using", "check", "find", "finding",
+    "make", "making", "need", "needs", "needed", "looking",
+    "interested", "discover", "earn", "earning", "here",
+}
+
+FRAGMENT_PREFIX_RE = re.compile(
+    r"(?i)^(?:"
+    + "|".join(sorted(FRAGMENT_LEADING_WORDS, key=len, reverse=True))
+    + r")\b"
+)
+
 
 def clean_source_text(raw_text: str) -> str:
     lines: list[str] = []
@@ -145,6 +162,29 @@ def _valid_name(name: str) -> bool:
         return False
     if low.startswith(("these ", "this ", "best ", "top ", "every ", "many ", "some ")):
         return False
+    if FRAGMENT_PREFIX_RE.search(name):
+        return False
+
+    # Reject generic prose such as "With this scholarship" or
+    # "Winning an advanced competition". A real title ending in an opportunity
+    # kind normally contains a meaningful proper-name token before the suffix.
+    words = re.findall(r"[A-Za-z0-9&.'’\-]+", name)
+    if words:
+        content_words = words[:-1] if words[-1].lower() in {
+            "competition", "contest", "challenge", "award", "scholarship",
+            "fellowship", "olympiad", "program",
+        } else words
+        if content_words and all(
+            w.lower() in {
+                "the", "this", "that", "these", "those", "a", "an", "your",
+                "our", "my", "their", "his", "her", "full", "advanced",
+                "september", "october", "november", "december", "january",
+                "february", "march", "april", "may", "june", "july", "august",
+            }
+            for w in content_words
+        ):
+            return False
+
     # At least one proper-looking token or well-known acronym.
     return bool(re.search(r"\b(?:[A-Z]{2,}|[A-Z][a-z]{2,})\b", name))
 
