@@ -109,10 +109,12 @@ def extract(comp_id: int):
     except Exception as exc:
         message = str(exc)
         lower = message.lower()
-        if "gemini_api_key is missing" in lower:
-            return go(error="Gemini is not configured yet. Add GEMINI_API_KEY to your .env file.")
+        if "all configured free ai providers" in lower:
+            return go(error="All configured free AI providers are temporarily unavailable or rate-limited. Add GROQ_API_KEY for a second-provider fallback, or try again later.")
+        if "groq_api_key is not configured" in lower and not os.getenv("GEMINI_API_KEY"):
+            return go(error="No free AI provider is configured. Add GEMINI_API_KEY or GROQ_API_KEY to your .env file.")
         if "503" in message or "unavailable" in lower or "high demand" in lower:
-            return go(error="Gemini is temporarily overloaded. The tracker tried its fallback models too. Try Verify Free again later; your data is safe.")
+            return go(error="The current free AI provider is temporarily unavailable. Configure GROQ_API_KEY for provider failover, or try again later.")
         if "429" in message or "quota" in lower or "rate limit" in lower:
             return go(error="The free AI service hit a temporary quota/rate limit. Try again later; your local data is safe.")
         return go(error=message)
@@ -135,12 +137,14 @@ def verify(comp_id: int):
     except Exception as exc:
         message = str(exc)
         lower = message.lower()
-        if "gemini_api_key is missing" in lower:
-            return go(error="Gemini is not configured yet. Add GEMINI_API_KEY to your .env file.")
+        if "all configured free ai providers" in lower:
+            return go(error="All configured free AI providers are temporarily unavailable or rate-limited. Add GROQ_API_KEY for a second-provider fallback, or try again later.")
+        if "groq_api_key is not configured" in lower and not os.getenv("GEMINI_API_KEY"):
+            return go(error="No free AI provider is configured. Add GEMINI_API_KEY or GROQ_API_KEY to your .env file.")
         if "does not look like a tavily api key" in lower:
             return go(error="Your Tavily key looks invalid. Tavily keys begin with 'tvly-'. You can fix/remove TAVILY_API_KEY; keyless verification is also supported.")
         if "503" in message or "unavailable" in lower or "high demand" in lower:
-            return go(error="Gemini is temporarily overloaded. The tracker already tried alternate stable Flash models. Try Verify Free again later; the Tavily search results and your saved data are safe.")
+            return go(error="The configured free AI providers are temporarily unavailable. Add GROQ_API_KEY for cross-provider failover, or try again later.")
         if "429" in message or "quota" in lower or "rate limit" in lower or "credits" in lower:
             return go(error="The free verification service hit its current usage limit. Try again after the service resets, or check your Gemini/Tavily free-tier usage.")
         return go(error=message)
