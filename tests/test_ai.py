@@ -6,6 +6,7 @@ from ai import (
     _is_transient_gemini_error,
     _search_query,
     _tavily_headers,
+    _tavily_only_verification,
     _validated_official_url,
 )
 
@@ -110,3 +111,39 @@ def test_groq_only_fallback_when_gemini_unconfigured(monkeypatch):
     result = ai._gemini_structured("verify this", CompetitionVerification)
     assert result.competition_name == "Example Contest"
     assert result.status == "open"
+
+
+def test_tavily_only_verification_without_ai(monkeypatch):
+    fake = {
+        "answer": (
+            "The Example Essay Contest is currently open. "
+            "The deadline is October 31, 2026. "
+            "There is no entry fee. "
+            "Eligible applicants are high school students. "
+            "Winners receive a $1,000 cash prize."
+        ),
+        "results": [
+            {
+                "title": "Official Example Essay Contest",
+                "url": "https://examplecontest.org/rules",
+                "content": "Official rules and deadline information.",
+                "score": 0.95,
+            }
+        ],
+    }
+    monkeypatch.setattr(ai, "_tavily_search_data", lambda record, include_answer=False: fake)
+    record = {
+        "competition_name": "Example Essay Contest",
+        "import_title": "Example Essay Contest",
+        "local_kind": "competition",
+    }
+
+    result, sources = _tavily_only_verification(record)
+    assert result.competition_name == "Example Essay Contest"
+    assert result.deadline == "2026-10-31"
+    assert result.status == "open"
+    assert result.entry_fee is not None
+    assert result.eligibility is not None
+    assert result.prize is not None
+    assert result.confidence == 0.45
+    assert sources[0]["url"] == "https://examplecontest.org/rules"
