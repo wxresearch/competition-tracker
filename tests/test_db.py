@@ -146,3 +146,32 @@ def test_verification_job_lifecycle(monkeypatch, tmp_path):
     assert row["status"] == "done"
     assert row["started_at"] is not None
     assert row["finished_at"] is not None
+
+
+def test_unknown_cycle_duplicates_are_flagged_not_auto_merged(monkeypatch, tmp_path):
+    setup_db(monkeypatch, tmp_path)
+    ts = int(datetime(2026, 9, 20, tzinfo=timezone.utc).timestamp())
+
+    db.insert_imported(
+        [
+            source_row(
+                "https://www.instagram.com/p/unknown1/",
+                "Conrad Challenge is a competition for high school students.",
+                ts,
+            ),
+            source_row(
+                "https://www.instagram.com/p/unknown2/",
+                "Students should consider the Conrad Challenge.",
+                ts,
+            ),
+        ]
+    )
+
+    items = [
+        item
+        for item in db.list_competitions(view="opportunities")
+        if item["competition_name"] == "Conrad Challenge"
+    ]
+    assert len(items) == 2
+    assert all(item["cycle_year"] is None for item in items)
+    assert all(item["possible_duplicates"] == 1 for item in items)
