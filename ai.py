@@ -119,12 +119,14 @@ def _groq_structured(prompt: str, schema: type[Any]) -> Any:
 
 
 def _gemini_structured(prompt: str, schema: type[Any]) -> Any:
-    client = _gemini_client()
     errors: list[str] = []
+    gemini_key = (os.getenv("GEMINI_API_KEY") or "").strip()
 
-    for model in _gemini_models():
-        try:
-            response = client.models.generate_content(
+    if gemini_key:
+        client = _gemini_client()
+        for model in _gemini_models():
+            try:
+                response = client.models.generate_content(
                 model=model,
                 contents=prompt,
                 config={
@@ -132,22 +134,24 @@ def _gemini_structured(prompt: str, schema: type[Any]) -> Any:
                     "response_json_schema": schema.model_json_schema(),
                 },
             )
-            if not response.text:
-                raise RuntimeError(f"{model} returned no structured result.")
-            try:
-                return schema.model_validate_json(response.text)
+                if not response.text:
+                    raise RuntimeError(f"{model} returned no structured result.")
+                try:
+                    return schema.model_validate_json(response.text)
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Could not parse structured result from {model}: {exc}"
+                    ) from exc
             except Exception as exc:
-                raise RuntimeError(
-                    f"Could not parse structured result from {model}: {exc}"
-                ) from exc
-        except Exception as exc:
-            errors.append(f"{model}: {exc}")
-            if not _is_transient_gemini_error(exc):
-                raise
-            # The Google SDK already retries transient failures internally.
-            # If that model is still overloaded after its retries, move on to
-            # the next stable Flash model instead of failing the whole request.
-            continue
+                errors.append(f"{model}: {exc}")
+                if not _is_transient_gemini_error(exc):
+                    raise
+                # The Google SDK already retries transient failures internally.
+                # If that model is still overloaded after its retries, move on
+                # to the next stable Flash model.
+                continue
+    else:
+        errors.append("Gemini: not configured")
 
     # Google can occasionally be saturated across multiple Flash variants.
     # If the user configured a free Groq key, use Groq as a second provider
