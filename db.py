@@ -752,6 +752,46 @@ def get_competition(comp_id: int) -> dict[str, Any] | None:
     return item
 
 
+def find_merge_candidates(comp_id: int, limit: int = 25) -> list[dict[str, Any]]:
+    with connect() as conn:
+        current = conn.execute(
+            "SELECT * FROM competitions WHERE id=?",
+            (comp_id,),
+        ).fetchone()
+        if not current:
+            return []
+
+        rows = conn.execute(
+            """
+            SELECT id, competition_name, organizer, category, deadline, cycle_year,
+                   verification_level, verified
+            FROM competitions
+            WHERE record_origin='split_child'
+              AND id != ?
+              AND review_state='active'
+              AND COALESCE(merged_into_id,0)=0
+              AND (
+                    category = ?
+                    OR organizer = ?
+                    OR competition_name LIKE ?
+                  )
+            ORDER BY verified DESC,
+                     CASE WHEN cycle_year = ? THEN 0 ELSE 1 END,
+                     competition_name COLLATE NOCASE
+            LIMIT ?
+            """,
+            (
+                comp_id,
+                current["category"],
+                current["organizer"],
+                f"%{(current['competition_name'] or '').split(' ')[0]}%",
+                current["cycle_year"],
+                limit,
+            ),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def _decorate_deadline(item: dict[str, Any]) -> dict[str, Any]:
     item["days_remaining"] = None
     item["urgency_bucket"] = "unknown"
