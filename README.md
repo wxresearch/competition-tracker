@@ -114,6 +114,170 @@ Open:
 http://127.0.0.1:8000
 ```
 
+## Restart after closing Command Prompt
+
+If you accidentally close Command Prompt while the app is running, **your project and saved data are not lost**. Closing the window only stops the local web server.
+
+Your project files, `.env`, imported Instagram data, and SQLite database remain on your computer.
+
+### Normal restart routine on Windows Command Prompt
+
+Open a new **Command Prompt** window and run:
+
+```cmd
+cd competition-tracker
+.venv\Scripts\activate
+git pull
+python -m uvicorn app:app --reload
+```
+
+Then open this address in your browser:
+
+```text
+http://127.0.0.1:8000
+```
+
+If everything starts correctly, Command Prompt should show something similar to:
+
+```text
+Uvicorn running on http://127.0.0.1:8000
+```
+
+### If `cd competition-tracker` does not work
+
+Check the folders in your current location:
+
+```cmd
+dir
+```
+
+If you see `competition-tracker`, run:
+
+```cmd
+cd competition-tracker
+```
+
+If the project is in your Windows user folder, try:
+
+```cmd
+cd %USERPROFILE%\competition-tracker
+```
+
+### If the virtual environment is not active
+
+Run:
+
+```cmd
+.venv\Scripts\activate
+```
+
+After activation, the prompt should begin with something like:
+
+```text
+(.venv) C:\Users\YourName\competition-tracker>
+```
+
+### If `uvicorn` is not recognized
+
+Use:
+
+```cmd
+python -m uvicorn app:app --reload
+```
+
+This is also the recommended startup command on Windows.
+
+### If port 8000 is already in use
+
+Start the app on port 8001 instead:
+
+```cmd
+python -m uvicorn app:app --reload --port 8001
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8001
+```
+
+### If `git pull` reports local changes
+
+Do **not** delete or overwrite files immediately.
+
+First run:
+
+```cmd
+git status
+```
+
+Review the changed files before deciding what to do.
+
+### When to reinstall packages
+
+You normally do **not** need to reinstall packages every time you start the app.
+
+Only run this when `requirements.txt` has changed or you are told to update dependencies:
+
+```cmd
+python -m pip install -r requirements.txt
+```
+
+### When to edit `.env`
+
+Only edit `.env` when changing API keys or configuration:
+
+```cmd
+notepad .env
+```
+
+Never post or commit the contents of `.env`, because it may contain private API keys.
+
+### Things you do NOT need to redo
+
+After the project has already been set up, you normally do **not** need to run these again:
+
+```cmd
+git clone https://github.com/wxresearch/competition-tracker.git
+python -m venv .venv
+copy .env.example .env
+```
+
+You also do **not** need to re-import `saved_posts.json` just because Command Prompt was closed.
+
+Your saved tracker database is normally stored at:
+
+```text
+data\competitions.db
+```
+
+### How to stop the app normally
+
+In the Command Prompt window running Uvicorn, press:
+
+```text
+Ctrl+C
+```
+
+Then you can safely close the window.
+
+### Quick cheat sheet
+
+For normal use, these are the commands to remember:
+
+```cmd
+cd competition-tracker
+.venv\Scripts\activate
+git pull
+python -m uvicorn app:app --reload
+```
+
+Then visit:
+
+```text
+http://127.0.0.1:8000
+```
+
 ## 4. Import format
 
 The easiest format is CSV:
