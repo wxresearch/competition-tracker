@@ -265,7 +265,7 @@ def _tavily_search_data(
         "include_raw_content": False,
     }
 
-    response = _tavily_post(TAVILY_SEARCH_URL, payload, timeout=35.0)
+    response = _tavily_post(TAVILY_SEARCH_URL, payload, timeout=20.0)
     return response.json()
 
 
