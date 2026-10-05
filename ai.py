@@ -12,6 +12,10 @@ from google import genai
 from models import CompetitionExtraction, CompetitionVerification
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+GEMINI_FALLBACK_MODELS = os.getenv(
+    "GEMINI_FALLBACK_MODELS",
+    "gemini-3.7-flash,gemini-3.6-flash",
+)
 TAVILY_SEARCH_URL = "https://api.tavily.com/search"
 TAVILY_EXTRACT_URL = "https://api.tavily.com/extract"
 
@@ -37,22 +41,65 @@ Source account: {record.get('owner_name') or record.get('owner_username') or ''}
 """.strip()
 
 
+def _gemini_models() -> list[str]:
+    models: list[str] = []
+    for model in [GEMINI_MODEL, *GEMINI_FALLBACK_MODELS.split(",")]:
+        clean = model.strip()
+        if clean and clean not in models:
+            models.append(clean)
+    return models
+
+
+def _is_transient_gemini_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    transient_markers = (
+        "503",
+        "unavailable",
+        "high demand",
+        "temporarily",
+        "service unavailable",
+        "429",
+        "resource_exhausted",
+        "rate limit",
+    )
+    return any(marker in message for marker in transient_markers)
+
+
 def _gemini_structured(prompt: str, schema: type[Any]) -> Any:
     client = _gemini_client()
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt,
-        config={
-            "response_mime_type": "application/json",
-            "response_json_schema": schema.model_json_schema(),
-        },
+    errors: list[str] = []
+
+    for model in _gemini_models():
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "response_json_schema": schema.model_json_schema(),
+                },
+            )
+            if not response.text:
+                raise RuntimeError(f"{model} returned no structured result.")
+            try:
+                return schema.model_validate_json(response.text)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Could not parse structured result from {model}: {exc}"
+                ) from exc
+        except Exception as exc:
+            errors.append(f"{model}: {exc}")
+            if not _is_transient_gemini_error(exc):
+                raise
+            # The Google SDK already retries transient failures internally.
+            # If that model is still overloaded after its retries, move on to
+            # the next stable Flash model instead of failing the whole request.
+            continue
+
+    raise RuntimeError(
+        "All configured Gemini models were temporarily unavailable or rate-limited. "
+        + " | ".join(errors)
     )
-    if not response.text:
-        raise RuntimeError("Gemini returned no structured result.")
-    try:
-        return schema.model_validate_json(response.text)
-    except Exception as exc:
-        raise RuntimeError(f"Could not parse Gemini result: {exc}") from exc
 
 
 def extract_competition(record: dict[str, Any]) -> CompetitionExtraction:
