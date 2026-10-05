@@ -202,12 +202,28 @@
           <p class="source-timing">{{ c.source_timing }} <span>from saved caption — verify before relying on it</span></p>
         {% endif %}
 
-        <div class="facts">
-          <div><span>Deadline</span><strong>{{ c.deadline or c.deadline_text or 'Unknown' }}</strong><small>{{ c.urgency_text }}</small></div>
-          <div><span>Entry fee</span><strong>{{ c.entry_fee or 'Unknown' }}</strong></div>
-          <div><span>Prize</span><strong>{{ c.prize or 'Unknown' }}</strong></div>
-          <div><span>Eligibility</span><strong>{{ c.eligibility or 'Unknown' }}</strong></div>
+        <div class="facts compact-facts">
+          <div>
+            <span>Deadline</span>
+            <strong>{{ c.deadline or c.deadline_text or 'Unknown' }}</strong>
+            <small>{{ c.urgency_text }}</small>
+          </div>
+          <div><span>Entry fee</span><strong class="clamp-value">{{ c.entry_fee or 'Unknown' }}</strong></div>
+          <div><span>Prize</span><strong class="clamp-value">{{ c.prize or 'Unknown' }}</strong></div>
+          <div><span>Eligibility</span><strong class="clamp-value">{{ c.eligibility or 'Unknown' }}</strong></div>
         </div>
+
+        {% if c.entry_fee or c.prize or c.eligibility or c.requirements %}
+        <details class="compact-details">
+          <summary>Full opportunity details</summary>
+          <div class="detail-grid">
+            {% if c.entry_fee %}<p><strong>Entry fee:</strong> {{ c.entry_fee }}</p>{% endif %}
+            {% if c.prize %}<p><strong>Prize:</strong> {{ c.prize }}</p>{% endif %}
+            {% if c.eligibility %}<p><strong>Eligibility:</strong> {{ c.eligibility }}</p>{% endif %}
+            {% if c.requirements %}<p><strong>Requirements:</strong> {{ c.requirements }}</p>{% endif %}
+          </div>
+        </details>
+        {% endif %}
 
         {% if c.last_verified_at %}
           <p class="verification-meta">Last web check: {{ c.last_verified_at[:10] }} · cached for {{ cache_days }} days</p>
@@ -238,46 +254,50 @@
         {% endif %}
       {% endif %}
 
-      {% if c.requirements %}<p class="notes"><strong>Requirements:</strong> {{ c.requirements }}</p>{% endif %}
-      {% if c.verification_notes %}<p class="notes"><strong>Verification note:</strong> {{ c.verification_notes }}</p>{% endif %}
+      {% if c.verification_notes or c.sources %}
+      <details class="compact-details verification-details">
+        <summary>
+          Verification details{% if c.sources %} · {{ c.sources|length }} source{% if c.sources|length != 1 %}s{% endif %}{% endif %}
+        </summary>
+        {% if c.verification_notes %}<p class="notes"><strong>Note:</strong> {{ c.verification_notes }}</p>{% endif %}
+        {% if c.sources %}
+          <div class="sources">
+            {% for source in c.sources %}
+              <a href="{{ source.url }}" target="_blank" rel="noopener noreferrer">{{ source.title or source.url }}</a>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </details>
+      {% endif %}
 
       {% if c.raw_text and c.record_origin == 'source_post' %}
         <details><summary>Source caption / notes</summary><p class="raw">{{ c.raw_text }}</p></details>
       {% endif %}
 
-      {% if c.sources %}
-        <div class="sources">
-          <strong>Verification sources</strong>
-          {% for source in c.sources %}
-            <a href="{{ source.url }}" target="_blank" rel="noopener noreferrer">{{ source.title or source.url }}</a>
-          {% endfor %}
-        </div>
-      {% endif %}
+      {% if c.record_origin == 'split_child' %}
+      <div class="actions primary-actions">
+        <a class="button-link secondary" href="/competitions/{{ c.id }}/edit">Edit</a>
 
-      <div class="actions">
-        {% if c.record_origin == 'split_child' %}
-          <a class="button-link secondary" href="/competitions/{{ c.id }}/edit">Edit / correct</a>
+        {% if not c.verification_job_status %}
+          {% if c.verified %}
+            <form action="/competitions/{{ c.id }}/verify" method="post">
+              <input type="hidden" name="force" value="1">
+              <button type="submit">Refresh verification</button>
+            </form>
+          {% else %}
+            <form action="/competitions/{{ c.id }}/verify" method="post"><button type="submit">Verify Fast</button></form>
+          {% endif %}
+        {% endif %}
 
+        {% if c.official_url %}<a class="button-link secondary" href="{{ c.official_url }}" target="_blank" rel="noopener noreferrer">Official site</a>{% endif %}
+      </div>
+
+      <details class="more-actions compact-details">
+        <summary>More actions</summary>
+        <div class="actions">
           {% if ai_extract_ready %}
             <form action="/competitions/{{ c.id }}/extract" method="post"><button type="submit" class="secondary">AI extract details</button></form>
           {% endif %}
-
-          {% if not c.verification_job_status %}
-            {% if c.verified %}
-              <form action="/competitions/{{ c.id }}/verify" method="post">
-                <button type="submit" class="secondary">Use cached / verify</button>
-              </form>
-              <form action="/competitions/{{ c.id }}/verify" method="post">
-                <input type="hidden" name="force" value="1">
-                <button type="submit">Refresh verification</button>
-              </form>
-            {% else %}
-              <form action="/competitions/{{ c.id }}/verify" method="post"><button type="submit">Verify Fast</button></form>
-            {% endif %}
-          {% endif %}
-
-          {% if c.official_url %}<a class="button-link secondary" href="{{ c.official_url }}" target="_blank" rel="noopener noreferrer">Official site</a>{% endif %}
-
           <form action="/competitions/{{ c.id }}/review-state" method="post">
             <input type="hidden" name="state" value="needs_review">
             <button type="submit" class="secondary">Needs review</button>
@@ -286,14 +306,19 @@
             <input type="hidden" name="state" value="irrelevant">
             <button type="submit" class="danger">Not an opportunity</button>
           </form>
-        {% else %}
-          {% if c.instagram_url %}<a class="button-link secondary" href="{{ c.instagram_url }}" target="_blank" rel="noopener noreferrer">Open source post</a>{% endif %}
-        {% endif %}
-
+          <form action="/competitions/{{ c.id }}/delete" method="post" onsubmit="return confirm('Delete this record permanently?')">
+            <button type="submit" class="danger">Delete</button>
+          </form>
+        </div>
+      </details>
+      {% else %}
+      <div class="actions">
+        {% if c.instagram_url %}<a class="button-link secondary" href="{{ c.instagram_url }}" target="_blank" rel="noopener noreferrer">Open source post</a>{% endif %}
         <form action="/competitions/{{ c.id }}/delete" method="post" onsubmit="return confirm('Delete this record permanently?')">
           <button type="submit" class="danger">Delete</button>
         </form>
       </div>
+      {% endif %}
     </article>
     {% else %}
       <div class="empty">
