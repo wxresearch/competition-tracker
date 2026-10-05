@@ -1288,6 +1288,34 @@ def set_verification_job(job_id: int, status: str, error: str | None = None) -> 
             )
 
 
+def unresolved_source_ids() -> list[int]:
+    """Return only source posts that could not yield an exact opportunity name."""
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id
+            FROM competitions
+            WHERE record_origin='source_post'
+              AND split_status='unresolved_single'
+            ORDER BY id
+            """
+        ).fetchall()
+    return [int(row["id"]) for row in rows]
+
+
+def delete_unresolved_sources() -> int:
+    """
+    Delete only source posts labeled "needs exact name".
+
+    This intentionally does not touch split_child opportunities that a user
+    manually moved into Needs Review.
+    """
+    ids = unresolved_source_ids()
+    for comp_id in ids:
+        delete_competition(comp_id)
+    return len(ids)
+
+
 def delete_competition(comp_id: int) -> None:
     with connect() as conn:
         row = conn.execute(
