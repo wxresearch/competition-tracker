@@ -24,15 +24,19 @@
 
     {% if message %}<div class="notice success">{{ message }}</div>{% endif %}
     {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
-    {% if not has_gemini_key %}
+    {% if not has_gemini_key and not has_groq_key %}
       <div class="notice warn">
-        <strong>Free verification setup:</strong> add <code>GEMINI_API_KEY</code> to <code>.env</code>.
-        Tavily can run in keyless mode, so <code>TAVILY_API_KEY</code> is optional.
+        <strong>Free verification setup:</strong> add <code>GEMINI_API_KEY</code> or <code>GROQ_API_KEY</code> to <code>.env</code>.
+        Using both gives provider failover. Tavily can run in keyless mode.
       </div>
     {% else %}
       <div class="notice success">
         <strong>Free verification ready.</strong>
-        Gemini is configured; Tavily will use {% if has_tavily_key %}your API key{% else %}keyless mode{% endif %}.
+        AI:
+        {% if has_gemini_key %}Gemini{% endif %}
+        {% if has_gemini_key and has_groq_key %} + {% endif %}
+        {% if has_groq_key %}Groq backup{% endif %}.
+        Tavily uses {% if has_tavily_key %}your API key{% else %}keyless mode{% endif %}.
       </div>
     {% endif %}
 
@@ -93,9 +97,9 @@
         <form action="/reclassify" method="post">
           <button type="submit" class="secondary">Rebuild local extraction</button>
         </form>
-        {% if view == 'opportunities' and has_gemini_key %}
+        {% if view == 'opportunities' and (has_gemini_key or has_groq_key) %}
         <form action="/extract-next" method="post" class="batch-form">
-          <label>Free Gemini extract next</label>
+          <label>Free AI extract next</label>
           <input type="number" name="batch_size" min="1" max="25" value="5">
           <button type="submit">Run</button>
         </form>
@@ -229,8 +233,8 @@
 
         <div class="actions">
           {% if c.record_origin == 'split_child' %}
-            {% if has_gemini_key %}
-              <form action="/competitions/{{ c.id }}/extract" method="post"><button type="submit" class="secondary">Gemini extract details</button></form>
+            {% if has_gemini_key or has_groq_key %}
+              <form action="/competitions/{{ c.id }}/extract" method="post"><button type="submit" class="secondary">AI extract details</button></form>
             {% endif %}
             {% if free_verify_ready %}
               <form action="/competitions/{{ c.id }}/verify" method="post"><button type="submit">Verify Free</button></form>
