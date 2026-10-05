@@ -19,8 +19,15 @@ It is designed for competitions, essay contests, olympiads, scholarships, resear
   - prize
   - eligibility
   - requirements
-- Can **verify an opportunity on the live web for free-tier usage** with Tavily + Gemini and save the retrieved sources.
-- Sorts records by deadline.
+- Can **verify an opportunity on the live web** with fast Tavily search and save the retrieved sources.
+- Runs verification in the background so the dashboard stays responsive.
+- Caches verification for 7 days by default to avoid repeated web requests.
+- Distinguishes verification levels: official-source confirmed, web-sourced, conflicting, or unclear.
+- Lets you manually edit/correct opportunity data, move items to Needs Review, or mark them irrelevant.
+- Detects duplicate opportunities, preserves multiple Instagram source posts, and supports manual merging.
+- Separates the recurring **opportunity** from its **annual cycle** (for example, Conrad Challenge vs. the 2026 cycle).
+- Adds deadline intelligence: days remaining, due-this-week, due-this-month, expired, and unknown-deadline states.
+- Sorts active opportunities by urgency.
 - Filters by category, status, and verification state.
 - Uses a local **SQLite** database, so you do not need to set up Postgres for the MVP.
 
@@ -53,54 +60,39 @@ Install packages:
 pip install -r requirements.txt
 ```
 
-## 2. Configure free AI + web verification
+## 2. Configure free web verification and optional AI
 
-This project no longer requires OpenAI credits.
+The tracker no longer requires OpenAI credits.
 
-It uses:
+### Fast web verification
 
-- **Google Gemini** for structured extraction and reasoning. The default is `gemini-3.8-flash`.
-- **Tavily** for live web search and page extraction.
+**Verify Fast** uses Tavily web search. A Tavily key is optional because the tracker can use Tavily's keyless mode.
 
-Create the two API keys:
-
-1. Gemini: https://aistudio.google.com/apikey
-2. Tavily: https://app.tavily.com/
-
-Copy the example environment file.
-
-### Windows Command Prompt
-
-```cmd
-copy .env.example .env
-notepad .env
-```
-
-### macOS / Linux
-
-```bash
-cp .env.example .env
-```
-
-Set:
+Optional:
 
 ```env
-GEMINI_API_KEY=your_gemini_key_here
-GEMINI_MODEL=gemini-3.8-flash
-TAVILY_API_KEY=your_tavily_key_here
+TAVILY_API_KEY=
+VERIFICATION_CACHE_DAYS=7
 ```
 
+Verification runs in the background and is cached for 7 days by default. Use **Refresh verification** when you explicitly want a new web check.
+
+### Optional AI detail extraction
+
+Gemini or Groq are optional and are used only for the separate **AI extract details** action.
+
+```env
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-3.8-flash
+GEMINI_FALLBACK_MODELS=gemini-3.7-flash,gemini-3.6-flash
+
+GROQ_API_KEY=
+GROQ_MODEL=qwen/qwen3.8-27b
+```
+
+You may configure either Gemini, Groq, both, or neither.
+
 **Never commit `.env` to GitHub.** It is already ignored by `.gitignore`.
-
-### What uses credits?
-
-- Importing Instagram JSON: **local/free**
-- Splitting roundup captions into named opportunities: **local/free**
-- Local filtering: **local/free**
-- Gemini detail extraction: uses Gemini's API free tier when available
-- **Verify Free**: uses Tavily web search/extraction plus Gemini
-
-The verifier performs an advanced Tavily search, selects the strongest sources, extracts up to five pages, and asks Gemini to structure only the evidence returned by Tavily. Official organizer/rules/application pages are prioritized over social posts and aggregators.
 
 ## 3. Run it
 
@@ -299,14 +291,20 @@ A plain JSON array using the same field names also works.
 
 ## Recommended workflow
 
-1. Import your Instagram `saved_posts.json`.
-2. The app locally separates source posts from actual named opportunities and splits list captions into child records.
-3. Review **Actual opportunities**, **Source posts**, and **Needs review**.
-4. Use **Gemini extract details** when a caption contains useful details that are not yet structured.
-5. Use **Verify Free** on opportunities you care about. Tavily searches the live web and Gemini evaluates the retrieved evidence.
-6. Prefer verified current-cycle data over dates copied from old Instagram posts.
+1. Import or refresh your Instagram `saved_posts.json`.
+2. Review **Actual opportunities** first. They are sorted by deadline urgency.
+3. Use **Edit / correct** whenever a parser-generated name, deadline, category, fee, prize, or eligibility field is wrong.
+4. Move uncertain items to **Needs Review** instead of deleting them.
+5. Use **Not an opportunity** for false positives.
+6. Watch for **possible duplicate** badges. Known same-cycle duplicates can merge automatically; unknown-cycle duplicates are left separate for manual review.
+7. Use the edit page's **Merge duplicate** control when two records are clearly the same opportunity/cycle. Their Instagram source links are preserved.
+8. Use **Verify Fast** for current web information. The request runs in the background and the page refreshes automatically.
+9. Verification is reused for 7 days unless you press **Refresh verification**.
+10. Prefer records marked **official source confirmed** over weaker web-only verification.
+11. Use **AI extract details** only when you want extra structured fields from the saved caption.
+12. Treat the permanent opportunity and its annual cycle separately; edit the cycle year/label when needed.
 
-Re-importing the same Instagram export refreshes existing source records rather than duplicating them.
+Re-importing the same Instagram export refreshes existing source records without wiping manual corrections.
 
 ## Important limitation
 
@@ -332,7 +330,8 @@ competition-tracker/
 ├── importer.py
 ├── models.py
 ├── templates/
-│   └── index.html
+│   ├── index.html
+│   └── edit.html
 ├── static/
 │   └── style.css
 ├── tests/
@@ -347,9 +346,9 @@ competition-tracker/
 - Image/screenshot upload with vision extraction.
 - Calendar view and `.ics` export.
 - Reminder emails before deadlines.
-- Duplicate detection.
 - Personal ranking: prize vs. effort vs. eligibility vs. time left.
 - Multi-stage deadlines (registration, abstract, final submission, finals).
+- Eligibility matching against a personal profile.
 - User accounts and cloud deployment.
 - Postgres/Supabase instead of SQLite.
 
