@@ -326,6 +326,17 @@ def reclassify():
     )
 
 
+@app.post("/delete-unresolved-sources")
+def delete_unresolved_sources():
+    count = db.delete_unresolved_sources()
+    if count == 0:
+        return go(message="No needs-exact-name source posts to delete.", view="review")
+    return go(
+        message=f"Deleted {count} needs-exact-name source post{'s' if count != 1 else ''}.",
+        view="review",
+    )
+
+
 @app.post("/competitions/{comp_id}/delete")
 def delete(comp_id: int):
     db.delete_competition(comp_id)
