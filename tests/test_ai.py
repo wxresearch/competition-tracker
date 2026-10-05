@@ -1,4 +1,5 @@
 import ai
+from models import CompetitionVerification
 from ai import (
     _best_search_results,
     _gemini_models,
@@ -92,3 +93,20 @@ def test_gemini_transient_error_detection():
     )
     assert _is_transient_gemini_error(RuntimeError("429 RESOURCE_EXHAUSTED"))
     assert not _is_transient_gemini_error(RuntimeError("400 invalid API key"))
+
+
+def test_groq_only_fallback_when_gemini_unconfigured(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test_key")
+
+    expected = CompetitionVerification(
+        competition_name="Example Contest",
+        status="open",
+        confidence=0.9,
+    )
+
+    monkeypatch.setattr(ai, "_groq_structured", lambda prompt, schema: expected)
+
+    result = ai._gemini_structured("verify this", CompetitionVerification)
+    assert result.competition_name == "Example Contest"
+    assert result.status == "open"
