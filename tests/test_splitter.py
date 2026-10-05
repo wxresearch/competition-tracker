@@ -83,3 +83,32 @@ Oct 2: Harvard Moot Court Legal Essay Contest
     names = [x["name"] for x in result["items"]]
     assert "Oct 2" not in names
     assert "Harvard Moot Court Legal Essay Contest" in names
+
+
+def test_sentence_fragments_are_not_opportunity_names():
+    text = """
+Then challenge
+Want the FULL September Scholarship
+Winning an advanced competition
+With this scholarship
+"""
+    result = split_source_post(text)
+    names = [x["name"] for x in result["items"]]
+
+    assert "Then challenge" not in names
+    assert "Want the FULL September Scholarship" not in names
+    assert "Winning an advanced competition" not in names
+    assert "With this scholarship" not in names
+
+
+def test_real_titles_still_survive_fragment_filter():
+    text = (
+        "Scholarships to apply for: The Legacy Lab Foundation Scholarship, "
+        "National Space Club Keynote Scholarship, Conrad Challenge"
+    )
+    result = split_source_post(text)
+    names = [x["name"] for x in result["items"]]
+
+    assert "The Legacy Lab Foundation Scholarship" in names
+    assert "National Space Club Keynote Scholarship" in names
+    assert "Conrad Challenge" in names
