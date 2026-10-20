@@ -19,17 +19,15 @@ It is designed for competitions, essay contests, olympiads, scholarships, resear
   - prize
   - eligibility
   - requirements
-- Can **verify an opportunity on the live web** with fast Tavily search and save the retrieved sources.
+- Can **verify an opportunity on the live web** and save the retrieved sources.
 - Runs verification in the background so the dashboard stays responsive.
 - Caches verification for 7 days by default to avoid repeated web requests.
 - Distinguishes verification levels: official-source confirmed, web-sourced, conflicting, or unclear.
 - Lets you manually edit/correct opportunity data, move items to Needs Review, or mark them irrelevant.
 - Detects duplicate opportunities, preserves multiple Instagram source posts, and supports manual merging.
-- Separates the recurring **opportunity** from its **annual cycle** (for example, Conrad Challenge vs. the 2026 cycle).
 - Adds deadline intelligence: days remaining, due-this-week, due-this-month, expired, and unknown-deadline states.
 - Sorts active opportunities by urgency.
 - Filters by category, status, and verification state.
-- Uses a local **SQLite** database, so you do not need to set up Postgres for the MVP.
 
 ## 1. Clone and set up
 
@@ -46,18 +44,6 @@ Activate the environment:
 
 ```powershell
 .venv\Scripts\Activate.ps1
-```
-
-### macOS / Linux
-
-```bash
-source .venv/bin/activate
-```
-
-Install packages:
-
-```bash
-pip install -r requirements.txt
 ```
 
 ## 2. Configure free web verification and optional AI
@@ -91,8 +77,6 @@ GROQ_MODEL=qwen/qwen3.8-27b
 ```
 
 You may configure either Gemini, Groq, both, or neither.
-
-**Never commit `.env` to GitHub.** It is already ignored by `.gitignore`.
 
 ## 3. Run it
 
@@ -179,20 +163,6 @@ python -m uvicorn app:app --reload
 
 This is also the recommended startup command on Windows.
 
-### If port 8000 is already in use
-
-Start the app on port 8001 instead:
-
-```cmd
-python -m uvicorn app:app --reload --port 8001
-```
-
-Then open:
-
-```text
-http://127.0.0.1:8001
-```
-
 ### If `git pull` reports local changes
 
 Do **not** delete or overwrite files immediately.
@@ -221,26 +191,6 @@ Only edit `.env` when changing API keys or configuration:
 
 ```cmd
 notepad .env
-```
-
-Never post or commit the contents of `.env`, because it may contain private API keys.
-
-### Things you do NOT need to redo
-
-After the project has already been set up, you normally do **not** need to run these again:
-
-```cmd
-git clone https://github.com/wxresearch/competition-tracker.git
-python -m venv .venv
-copy .env.example .env
-```
-
-You also do **not** need to re-import `saved_posts.json` just because Command Prompt was closed.
-
-Your saved tracker database is normally stored at:
-
-```text
-data\competitions.db
 ```
 
 ### How to stop the app normally
@@ -305,41 +255,6 @@ A plain JSON array using the same field names also works.
 12. Treat the permanent opportunity and its annual cycle separately; edit the cycle year/label when needed.
 
 Re-importing the same Instagram export refreshes existing source records without wiping manual corrections.
-
-## Important limitation
-
-This app does **not scrape Instagram**. Instagram links are stored as references. For best results, include the post caption, copied text, OCR text, or your own notes in the `caption`/`text` column.
-
-If your import contains only Instagram URLs, the verifier may still identify some public competitions through web search, but results will be much less reliable than when you provide the saved post's text.
-
-## Tests
-
-```bash
-pytest
-```
-
-## Project structure
-
-```text
-competition-tracker/
-├── app.py
-├── ai.py
-├── classifier.py
-├── splitter.py
-├── db.py
-├── importer.py
-├── models.py
-├── templates/
-│   ├── index.html
-│   └── edit.html
-├── static/
-│   └── style.css
-├── tests/
-│   └── test_importer.py
-├── sample_import.csv
-├── requirements.txt
-└── .env.example
-```
 
 ## Possible next upgrades
 
