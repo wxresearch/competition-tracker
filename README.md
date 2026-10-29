@@ -1,20 +1,26 @@
-# Competition Tracker
+# Competition Tracker — Competition, Scholarship, and Contest Opportunity Organizer
 
-A personal web app for organizing competitions, scholarships, contests, and other opportunities saved from Instagram.
+Competition Tracker is a Python web app that turns saved Instagram posts and imported files into a **searchable database of competitions, scholarships, contests, and other opportunities**. It helps users find relevant opportunities, review requirements, track deadlines, and keep application information organized in one place.
+
+Instead of scrolling through saved social media posts to remember an opportunity, users can import posts, sort out irrelevant or uncertain results, and maintain structured records with information such as eligibility, prizes, deadlines, and entry requirements.
 
 ## Features
 
-- Import saved Instagram posts from JSON or CSV.
-- Find opportunities, review uncertain posts, and remove irrelevant ones.
-- Track deadlines, eligibility, prizes, and entry requirements.
-- Verify opportunities online and optionally extract details with AI.
-- Edit entries, merge duplicates, and filter your opportunities.
+- **Instagram saved-post import:** Import opportunity information from JSON or CSV files.
+- **Opportunity database:** Organize competitions, scholarships, contests, and similar opportunities in one searchable location.
+- **Deadline tracking:** Record deadlines, eligibility rules, prizes, and entry requirements.
+- **Search and filtering:** Find opportunities that match your interests or application needs.
+- **Online verification:** Check opportunity details against online sources.
+- **Optional AI extraction:** Assist with extracting information from posts or sources when configured.
+- **Review workflow:** Inspect uncertain results and remove irrelevant entries.
+- **Data cleanup:** Edit opportunities and merge duplicates.
+- **Local persistence:** Keep saved entries on your computer between sessions.
 
-## Getting started
+## Getting Started
 
-Using **Windows Command Prompt** with Python installed:
+Requires Python. On Windows, run:
 
-```cmd
+```bat
 git clone https://github.com/wxresearch/competition-tracker.git
 cd competition-tracker
 python -m venv .venv
@@ -23,22 +29,32 @@ python -m pip install -r requirements.txt
 python -m uvicorn app:app --reload
 ```
 
-Open http://127.0.0.1:8000 in your browser.
+Open `http://127.0.0.1:8000` in your browser.
 
-Import your Instagram `saved_posts.json` export or a CSV file to get started. Web verification works without a paid OpenAI account. Optional API keys for Tavily, Gemini, or Groq can be added to a local `.env` file.
+Import an Instagram `saved_posts.json` export or a CSV file to begin organizing opportunities.
 
-## Running it again
+Online verification can work without a paid OpenAI account. For optional integrations, use the settings described in `.env.example`; supported API-key options include Tavily, Gemini, and Groq.
 
-From the project folder in CMD:
+Keep your `.env` file private and out of version control.
 
-```cmd
-git pull
-.venv\Scripts\activate.bat
-python -m uvicorn app:app --reload
-```
+## Who Is It For?
 
-Your saved data remains on your computer when you close the app.
+Competition Tracker is useful for:
+
+- Students searching for academic competitions and scholarships.
+- Scholarship applicants managing multiple deadlines.
+- Artists, designers, and creators looking for contests.
+- Researchers exploring academic opportunities.
+- Anyone who saves competition announcements online and wants a more reliable way to organize them.
+
+## Technologies and Topics
+
+**Python · Web application · FastAPI · Competition tracker · Scholarship tracker · Contest organizer · Instagram saved posts · Deadline management · Opportunity discovery · Searchable database · Data import · Duplicate detection · AI-assisted information extraction**
+
+## Project Repository
+
+https://github.com/wxresearch/competition-tracker
 
 ## License
 
-MIT
+MIT. See the repository's `LICENSE` file.
